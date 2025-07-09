@@ -122,10 +122,10 @@ export function StudentHome({ onPageChange }: StudentHomeProps) {
             <div className="rounded-3xl shadow-2xl bg-gradient-to-br from-[#0056a6] via-[#00b6e3] to-[#ff7f32] p-12 min-h-[320px] flex flex-col md:flex-row items-center justify-between mb-4 relative overflow-hidden">
               <div className="flex-1 z-10">
                 <div className="flex items-center mb-6">
-                  <span className="bg-white rounded-xl p-2 shadow mr-6 flex items-center justify-center"><img src="/logo.png" alt="CIE Logo" className="h-16 w-auto" /></span>
+                  {/* Removed logo from hero section */}
                   <span className="text-white text-4xl font-extrabold tracking-tight">CIE Student Portal</span>
                 </div>
-                <h2 className="text-3xl md:text-5xl font-extrabold text-white mb-4">Welcome to your learning hub!</h2>
+                <h2 className="text-3xl md:text-5xl font-extrabold text-white mb-4 dark:text-white">Welcome to your learning hub!</h2>
                 <p className="text-white/90 mb-8 max-w-2xl text-lg">Track your courses, projects, and academic progress—all in one place.</p>
                 <div className="flex gap-6">
                   <button className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-3 rounded-lg shadow transition-colors text-lg">Learn More</button>
@@ -139,7 +139,7 @@ export function StudentHome({ onPageChange }: StudentHomeProps) {
               {stats.map((stat, index) => (
                 <Card key={index} className="hover:shadow-lg transition-shadow transform hover:scale-105 focus:scale-105 transition-transform duration-200">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
+                    <CardTitle className="text-sm font-medium dark:text-white">{stat.title}</CardTitle>
                     <stat.icon className={`h-4 w-4 ${stat.color}`} />
                   </CardHeader>
                   <CardContent>
@@ -182,7 +182,7 @@ export function StudentHome({ onPageChange }: StudentHomeProps) {
 
               <Card className="transform hover:scale-105 focus:scale-105 transition-transform duration-200">
                 <CardHeader>
-                  <CardTitle>Recent Activities</CardTitle>
+                  <CardTitle className="dark:text-white">Recent Activities</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
@@ -201,7 +201,7 @@ export function StudentHome({ onPageChange }: StudentHomeProps) {
 
               <Card className="transform hover:scale-105 focus:scale-105 transition-transform duration-200">
                 <CardHeader>
-                  <CardTitle>Active Projects</CardTitle>
+                  <CardTitle className="dark:text-white">Active Projects</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
@@ -234,7 +234,7 @@ export function StudentHome({ onPageChange }: StudentHomeProps) {
                 className={`transform transition-transform duration-300 hover:scale-105 focus:scale-105 ${highlightQuickActions ? 'scale-110 ring-4 ring-blue-400/60 z-20' : ''}`}
               >
                 <CardHeader>
-                  <CardTitle>Quick Actions</CardTitle>
+                  <CardTitle className="dark:text-white">Quick Actions</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">

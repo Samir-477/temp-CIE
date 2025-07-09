@@ -195,7 +195,7 @@ export function ManageDomains() {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">CIE Coordinator Management</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">CIE Coordinator Management</h1>
           <p className="text-sm text-gray-600 mt-1">Assign faculty members as coordinators for different domains</p>
         </div>
         <div className="flex space-x-2">

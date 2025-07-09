@@ -577,7 +577,7 @@ export function ManageLibrary() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h3 className="text-3xl font-bold text-gray-900">Library Items Management</h3>
+          <h3 className="text-3xl font-bold text-gray-900 dark:text-white">Library Items Management</h3>
         </div>
         <div className="flex space-x-2">
           <Button onClick={fetchItems} variant="outline">

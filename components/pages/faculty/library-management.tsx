@@ -13,6 +13,7 @@ import { BookOpen, RotateCcw, Loader2 } from "lucide-react"
 import { CheckCircle, Clock, AlertTriangle, Package, X, Plus, ChevronRight, ChevronLeft } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/components/auth-provider"
+import { useTheme } from 'next-themes';
 
 // Utility functions - declared at module scope for hoisting
 export function isOverdue(expectedReturnDate: string): boolean {
@@ -72,6 +73,7 @@ interface LibraryRequest {
 }
 
 export function LibraryManagement() {
+  const { resolvedTheme } = useTheme();
   const { user } = useAuth()
   const [items, setItems] = useState<LibraryItem[]>([])
   const [allItems, setAllItems] = useState<LibraryItem[]>([])
@@ -535,9 +537,12 @@ export function LibraryManagement() {
   }
 
   if (loading) {
+    if (!resolvedTheme) return null;
+    const isDark = resolvedTheme === 'dark';
+    const logoSrc = isDark ? '/logo_cie_animation_black.gif' : '/logo_cie_animation_white.gif';
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-lg">Loading library items...</div>
+        <img src={logoSrc} alt="CIE Loading" className="h-32 w-32 object-contain" />
       </div>
     )
   }
@@ -546,7 +551,7 @@ export function LibraryManagement() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Library</h1>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Library</h1>
         </div>
         <Button onClick={fetchData} variant="outline">
           <RotateCcw className="h-4 w-4 mr-2" />

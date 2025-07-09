@@ -250,8 +250,8 @@ export function DashboardLayout({ children, currentPage, onPageChange, menuItems
                 <Button variant="ghost" className="relative h-10 px-3 rounded-full flex items-center space-x-2">
                   <div className="flex items-center space-x-2">
                     <div className="text-right">
-                      <p className="font-medium text-gray-900 text-sm">{user?.name}</p>
-                      <p className="text-xs leading-none text-muted-foreground">
+                      <p className="font-medium text-gray-900 text-sm dark:text-white">{user?.name}</p>
+                      <p className="text-xs leading-none text-muted-foreground dark:text-white">
                         {user?.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1).toLowerCase() : ''}
                       </p>
                     </div>
@@ -289,7 +289,7 @@ export function DashboardLayout({ children, currentPage, onPageChange, menuItems
           "fixed inset-y-0 left-0 z-40 transform transition-all duration-500 ease-in-out lg:translate-x-0 rounded-r-2xl overflow-hidden shadow-2xl",
           sidebarWidth,
           sidebarOpen ? "translate-x-0" : "-translate-x-full",
-          "bg-gradient-to-b from-blue-100 to-indigo-100 dark:bg-dark4 dark:text-dark1"
+          "bg-white dark:bg-[hsl(234,30%,10%)] dark:text-white"
         )}
         style={{
           boxShadow: '4px 0 15px rgba(0, 0, 0, 0.1)'
@@ -297,7 +297,7 @@ export function DashboardLayout({ children, currentPage, onPageChange, menuItems
       >
         <div className="flex flex-col h-full">
           {/* Header with gradient */}
-          <div className="flex items-center justify-center h-20 px-4 border-b border-indigo-200 bg-white/90">
+          <div className="flex items-center justify-center h-20 px-4 border-b border-indigo-200 bg-white/90 dark:bg-[hsl(234,30%,22%)]">
             <div className="relative w-full h-full flex items-center justify-center p-2">
               {sidebarCollapsed ? (
                 <img 
@@ -376,7 +376,7 @@ export function DashboardLayout({ children, currentPage, onPageChange, menuItems
                 className={cn(
                   "w-full flex items-center p-3 transition-all duration-200 rounded-lg mx-1",
                   sidebarCollapsed ? "justify-center px-2" : "px-4",
-                  "text-gray-800 hover:bg-blue-100 hover:text-indigo-800"
+                  "text-gray-800 hover:bg-blue-100 hover:text-indigo-800 dark:text-gray-100"
                 )}
                 onClick={() => {
                   onPageChange('profile');
@@ -405,7 +405,7 @@ export function DashboardLayout({ children, currentPage, onPageChange, menuItems
                 className={cn(
                   "w-full flex items-center p-3 transition-all duration-200 rounded-lg mx-1",
                   sidebarCollapsed ? "justify-center px-2" : "px-4",
-                  "text-gray-800 hover:bg-blue-100 hover:text-indigo-800"
+                  "text-gray-800 hover:bg-blue-100 hover:text-indigo-800 dark:text-gray-100"
                 )}
                 onClick={() => {
                   // You can add help navigation logic here
@@ -417,7 +417,7 @@ export function DashboardLayout({ children, currentPage, onPageChange, menuItems
                   className={cn(
                     "h-5 w-5 transition-transform duration-300",
                     !sidebarCollapsed && "mr-3",
-                    "text-gray-600"
+                    "text-gray-600 dark:text-gray-100"
                   )} 
                   fill="none" 
                   viewBox="0 0 24 24" 
@@ -444,7 +444,8 @@ export function DashboardLayout({ children, currentPage, onPageChange, menuItems
             <button
               className={cn(
                 "w-full flex items-center text-gray-600 hover:bg-gray-100 p-2 rounded transition-all duration-200",
-                sidebarCollapsed ? "justify-center px-2" : "px-3"
+                sidebarCollapsed ? "justify-center px-2" : "px-3",
+                "dark:text-gray-100"
               )}
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
             >

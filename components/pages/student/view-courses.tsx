@@ -139,7 +139,7 @@ export function ViewCourses() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Available Courses</h1>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Available Courses</h1>
           <p className="text-gray-600 mt-2">Browse and sign up for available courses</p>
         </div>
         <Button onClick={fetchData} variant="outline">

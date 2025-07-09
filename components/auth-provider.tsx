@@ -41,12 +41,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(userData)
         // Optionally refresh user data from server
         refreshUserData(userData.id)
+        .finally(() => setTimeout(() => setIsLoading(false), 900))
       } catch (error) {
         console.error("Error parsing stored user:", error)
         localStorage.removeItem("cie-user")
+        setTimeout(() => setIsLoading(false), 900)
       }
+    } else {
+      setTimeout(() => setIsLoading(false), 900)
     }
-    setIsLoading(false)
   }, [])
 
   const refreshUserData = async (userId: string) => {

@@ -71,10 +71,10 @@ export function AdminHome({ onPageChange }: AdminHomeProps) {
             <div className="rounded-3xl shadow-2xl bg-gradient-to-br from-[#0056a6] via-[#00b6e3] to-[#ff7f32] p-12 min-h-[320px] flex flex-col md:flex-row items-center justify-between mb-4 relative overflow-hidden">
               <div className="flex-1 z-10">
                 <div className="flex items-center mb-6">
-                  <span className="bg-white rounded-xl p-2 shadow mr-6 flex items-center justify-center"><img src="/logo.png" alt="CIE Logo" className="h-16 w-auto" /></span>
+                  {/* Removed logo from hero section */}
                   <span className="text-white text-4xl font-extrabold tracking-tight">CIE Admin Portal</span>
                 </div>
-                <h2 className="text-3xl md:text-5xl font-extrabold text-white mb-4">Are you ready to manage innovation?</h2>
+                <h2 className="text-3xl md:text-5xl font-extrabold text-white mb-4 dark:text-white">Are you ready to manage innovation?</h2>
                 <p className="text-white/90 mb-8 max-w-2xl text-lg">Welcome to the Centre for Innovation & Entrepreneurship. Oversee faculty, students, courses, and more—all in one place.</p>
                 <div className="flex gap-6">
                   <button className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-3 rounded-lg shadow transition-colors text-lg">Learn More</button>
@@ -88,7 +88,7 @@ export function AdminHome({ onPageChange }: AdminHomeProps) {
               {stats.map((stat, index) => (
                 <Card key={index} className="hover:shadow-lg transition-shadow transform hover:scale-105 focus:scale-105 transition-transform duration-200">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
+                    <CardTitle className="text-sm font-medium dark:text-white">{stat.title}</CardTitle>
                     <stat.icon className={`h-4 w-4 ${stat.color}`} />
                   </CardHeader>
                   <CardContent>
@@ -102,7 +102,7 @@ export function AdminHome({ onPageChange }: AdminHomeProps) {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <Card className="transform hover:scale-105 focus:scale-105 transition-transform duration-200">
                 <CardHeader>
-                  <CardTitle>System Alerts (*)</CardTitle>
+                  <CardTitle className="dark:text-white">System Alerts (*)</CardTitle>
                   <CardDescription>Critical items requiring attention</CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -144,7 +144,7 @@ export function AdminHome({ onPageChange }: AdminHomeProps) {
               </Card>
               <Card className="transform hover:scale-105 focus:scale-105 transition-transform duration-200">
                 <CardHeader>
-                  <CardTitle>Recent Activities (*)</CardTitle>
+                  <CardTitle className="dark:text-white">Recent Activities (*)</CardTitle>
                   {/* <CardDescription>Latest system activities</CardDescription> */}
                 </CardHeader>
                 <CardContent>
@@ -183,7 +183,7 @@ export function AdminHome({ onPageChange }: AdminHomeProps) {
                 className={`transform transition-transform duration-300 hover:scale-105 focus:scale-105 ${highlightQuickActions ? 'scale-110 ring-4 ring-blue-400/60 z-20' : ''}`}
               >
                 <CardHeader>
-                  <CardTitle>Quick Actions (*)</CardTitle>
+                  <CardTitle className="dark:text-white">Quick Actions (*)</CardTitle>
                   <CardDescription>Common administrative tasks</CardDescription>
                 </CardHeader>
                 <CardContent>

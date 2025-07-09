@@ -461,7 +461,7 @@ export function ViewProjects() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Projects</h1>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Projects</h1>
         </div>
         <div className="flex space-x-2">
           <Button onClick={fetchData} variant="outline">

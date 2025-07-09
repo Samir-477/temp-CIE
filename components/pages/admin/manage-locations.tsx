@@ -162,7 +162,7 @@ export function ManageLocations() {
       }
     } catch (error) {
       console.error('Error saving location:', error);
-    toast({
+      toast({
         title: 'Error',
         description: 'Failed to save location',
         variant: 'destructive',
@@ -331,7 +331,7 @@ export function ManageLocations() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Manage Locations</h1>
+          <h1 className="text-3xl font-bold dark:text-white">Manage Locations</h1>
         </div>
 
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

@@ -6,10 +6,12 @@ import { AdminDashboard } from "@/components/dashboards/admin-dashboard"
 import { FacultyDashboard } from "@/components/dashboards/faculty-dashboard"
 import { StudentDashboard } from "@/components/dashboards/student-dashboard"
 import { useEffect, useState } from "react"
+import { useTheme } from 'next-themes';
 
 export default function HomePage() {
   const { user, isLoading } = useAuth()
   const [mounted, setMounted] = useState(false)
+  const { resolvedTheme } = useTheme();
 
   // Ensure component is mounted on client side
   useEffect(() => {
@@ -21,12 +23,17 @@ export default function HomePage() {
     console.log("HomePage render - User:", user, "IsLoading:", isLoading, "Mounted:", mounted)
   }, [user, isLoading, mounted])
 
-  if (!mounted || isLoading) {
+  if (!mounted || !resolvedTheme) {
+    return null;
+  }
+  if (isLoading) {
+    const isDark = resolvedTheme === 'dark';
+    const logoSrc = isDark ? '/logo_cie_animation_black.gif' : '/logo_cie_animation_white.gif';
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      <div className={`flex items-center justify-center min-h-screen ${isDark ? 'bg-black' : 'bg-background'}`}>
+        <img src={logoSrc} alt="CIE Loading" className="h-64 w-64 object-contain" />
       </div>
-    )
+    );
   }
 
   if (!user) {

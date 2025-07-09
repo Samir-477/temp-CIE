@@ -10,6 +10,16 @@ body {
   .text-balance {
     text-wrap: balance;
   }
+  .sidebar-dark {
+    background-color: hsl(var(--sidebar-background-dark)) !important;
+    color: hsl(var(--sidebar-foreground)) !important;
+  }
+  .force-dark-sidebar {
+    background-color: hsl(234, 30%, 10%) !important;
+    color: #fff !important;
+    min-height: 100vh !important;
+    height: 100vh !important;
+  }
 }
 
 @layer base {
