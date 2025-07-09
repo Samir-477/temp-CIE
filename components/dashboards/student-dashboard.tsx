@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { Home, User as UserIcon, MapPin, Calendar, BookOpen, FolderOpen, ClipboardCheck, Wrench, Moon, Sun, History } from "lucide-react"
+import { Home, User as UserIcon, MapPin, Calendar, BookOpen, FolderOpen, ClipboardCheck, Wrench, Briefcase, History } from "lucide-react"
 import { StudentHome } from "@/components/pages/student/student-home"
 import { StudentCalendar } from "@/components/pages/student/student-calendar"
 import { LabComponentsRequest } from "@/components/pages/student/lab-components-request"
@@ -12,6 +12,7 @@ import { ViewAttendance } from "@/components/pages/student/view-attendance"
 import { UserProfile } from "@/components/common/user-profile"
 import { LibraryDashboard } from "@/components/pages/common/library-dashboard"
 import { StudentRequestHistory } from "@/components/pages/student/request-history"
+import StudentInternshipDashboard from "@/components/internships/StudentInternshipDashboard"
 
 const menuItems = [
   { id: "home", label: "Dashboard", icon: Home },
@@ -19,9 +20,12 @@ const menuItems = [
   { id: "calendar", label: "Calendar", icon: Calendar },
   { id: "courses", label: "Courses", icon: BookOpen },
   { id: "projects", label: "Projects", icon: FolderOpen },
+  { id: "internships", label: "Internships", icon: Briefcase },
   { id: "attendance", label: "Attendance", icon: ClipboardCheck },
   { id: "lab-components", label: "Lab Components", icon: Wrench },
   { id: "library", label: "Library", icon: BookOpen },
+  { id: "request-history", label: "Request History", icon: History },
+  { id: "profile", label: "Profile", icon: UserIcon },
 ]
 
 export function StudentDashboard() {
@@ -46,6 +50,8 @@ export function StudentDashboard() {
         return <ViewCourses />
       case "projects":
         return <ViewProjects />
+      case "internships":
+        return <StudentInternshipDashboard />
       case "attendance":
         return <ViewAttendance />
       case "lab-components":

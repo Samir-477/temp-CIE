@@ -35,7 +35,10 @@ import {
   TrendingUp,
   RefreshCw,
   Filter,
-  Search
+  Search,
+  Briefcase,
+  Users,
+  Building
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/components/auth-provider"
@@ -101,6 +104,37 @@ interface LibraryRequest {
   payment_proof?: string
 }
 
+interface InternshipProject {
+  id: string
+  title: string
+  description: string
+  duration: string
+  skills: string
+  slots: number
+  startDate: string
+  endDate: string
+  facultyId: string
+  isAccepted: boolean
+  status: string
+  faculty?: {
+    id: string
+    name: string
+  }
+  applications?: InternshipApplication[]
+}
+
+interface InternshipApplication {
+  id: string
+  studentId: string
+  internshipId: string
+  status: string
+  appliedAt: string
+  student: {
+    user: { name: string; email: string }
+    student_id: string
+  }
+}
+
 type RequestUnion = ComponentRequest | LibraryRequest
 
 function isComponentRequest(request: RequestUnion): request is ComponentRequest {
@@ -116,6 +150,7 @@ export function CoordinatorDashboard() {
   const { toast } = useToast()
   const [componentRequests, setComponentRequests] = useState<ComponentRequest[]>([])
   const [libraryRequests, setLibraryRequests] = useState<LibraryRequest[]>([])
+  const [internshipProjects, setInternshipProjects] = useState<InternshipProject[]>([])
   const [loading, setLoading] = useState(true)
   const [facultyNotes, setFacultyNotes] = useState("")
   const [activeTab, setActiveTab] = useState("analytics")
@@ -137,6 +172,7 @@ export function CoordinatorDashboard() {
   useEffect(() => {
     fetchRequests()
     fetchCoordinatorDomains()
+    fetchInternships()
   }, [])
 
   const fetchCoordinatorDomains = async () => {
@@ -209,6 +245,106 @@ export function CoordinatorDashboard() {
       })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchInternships = async () => {
+    try {
+      const response = await fetch("/api/internships", {
+        headers: { "x-user-id": user?.id || "" }
+      })
+      const data = await response.json()
+      
+      // Filter internships where current user is the faculty
+      const userInternships = (data.internships || []).filter((internship: InternshipProject) => 
+        internship.facultyId === user?.id
+      )
+      
+      setInternshipProjects(userInternships)
+    } catch (error) {
+      console.error("Error fetching internships:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load internships",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const fetchInternshipApplications = async (internshipId: string) => {
+    try {
+      const response = await fetch(`/api/internships/${internshipId}/applicants`, {
+        headers: { "x-user-id": user?.id || "" }
+      })
+      const data = await response.json()
+      
+      // Update the specific internship with applications
+      setInternshipProjects(prev => 
+        prev.map(internship => 
+          internship.id === internshipId 
+            ? { ...internship, applications: data.applications || [] }
+            : internship
+        )
+      )
+    } catch (error) {
+      console.error("Error fetching internship applications:", error)
+    }
+  }
+
+  const handleInternshipApplicationStatus = async (applicationId: string, status: string, internshipId: string) => {
+    try {
+      const response = await fetch(`/api/applications/${applicationId}/status`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": user?.id || ""
+        },
+        body: JSON.stringify({ status })
+      })
+
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: `Application ${status.toLowerCase()} successfully`
+        })
+        // Refresh applications for this internship
+        fetchInternshipApplications(internshipId)
+      } else {
+        const error = await response.json()
+        throw new Error(error.error)
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to update application",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const acceptInternshipProject = async (internshipId: string) => {
+    try {
+      const response = await fetch(`/api/internships/${internshipId}/accept`, {
+        method: "POST",
+        headers: { "x-user-id": user?.id || "" }
+      })
+
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: "Internship project accepted successfully"
+        })
+        fetchInternships()
+      } else {
+        const error = await response.json()
+        throw new Error(error.error)
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to accept project",
+        variant: "destructive",
+      })
     }
   }
 
@@ -352,6 +488,36 @@ export function CoordinatorDashboard() {
     }
   }
 
+  const getInternshipStatusBadge = (status: string) => {
+    const baseClass = "font-medium"
+    switch (status) {
+      case "OPEN":
+        return <Badge className={`bg-green-100 text-green-800 ${baseClass}`}>Open</Badge>
+      case "CLOSED":
+        return <Badge className={`bg-red-100 text-red-800 ${baseClass}`}>Closed</Badge>
+      case "IN_PROGRESS":
+        return <Badge className={`bg-blue-100 text-blue-800 ${baseClass}`}>In Progress</Badge>
+      case "COMPLETED":
+        return <Badge className={`bg-gray-100 text-gray-800 ${baseClass}`}>Completed</Badge>
+      default:
+        return <Badge variant="outline">{status}</Badge>
+    }
+  }
+
+  const getApplicationStatusBadge = (status: string) => {
+    const baseClass = "font-medium"
+    switch (status) {
+      case "PENDING":
+        return <Badge className={`bg-yellow-100 text-yellow-800 ${baseClass}`}>Pending</Badge>
+      case "ACCEPTED":
+        return <Badge className={`bg-green-100 text-green-800 ${baseClass}`}>Accepted</Badge>
+      case "REJECTED":
+        return <Badge className={`bg-red-100 text-red-800 ${baseClass}`}>Rejected</Badge>
+      default:
+        return <Badge variant="outline">{status}</Badge>
+    }
+  }
+
   // Filter out expired requests from collection views
   const filterActiveRequests = (requests: any[]) => {
     const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000)
@@ -488,7 +654,7 @@ export function CoordinatorDashboard() {
       )}
 
       {/* Clickable Summary Cards with Hover Effects */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <Card 
           className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 hover:bg-purple-100 hover:border-purple-300 ${
             activeTab === 'analytics' ? 'ring-2 ring-purple-500 bg-purple-50 border-purple-200' : 'hover:ring-1 hover:ring-purple-200'
@@ -542,6 +708,24 @@ export function CoordinatorDashboard() {
             </div>
           </CardContent>
         </Card>
+
+        <Card 
+          className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 hover:bg-indigo-100 hover:border-indigo-300 ${
+            activeTab === 'internships' ? 'ring-2 ring-indigo-500 bg-indigo-50 border-indigo-200' : 'hover:ring-1 hover:ring-indigo-200'
+          }`}
+          onClick={() => setActiveTab('internships')}
+        >
+          <CardContent className="p-4">
+            <div className="flex items-center justify-center space-x-2">
+              <Briefcase className={`h-5 w-5 transition-colors duration-200 ${
+                activeTab === 'internships' ? 'text-indigo-600' : 'text-indigo-500 group-hover:text-indigo-700'
+              }`} />
+              <p className={`text-lg font-medium transition-colors duration-200 ${
+                activeTab === 'internships' ? 'text-indigo-600' : 'text-gray-600'
+              }`}>Internships</p>
+            </div>
+          </CardContent>
+        </Card>
         
         <Card 
           className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 hover:bg-orange-100 hover:border-orange-300 ${
@@ -569,7 +753,7 @@ export function CoordinatorDashboard() {
           <p className="text-gray-600">Insights and statistics for your coordinator domains</p>
           
           {/* Analytics Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Total Requests</CardTitle>
@@ -607,6 +791,19 @@ export function CoordinatorDashboard() {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Items past due date
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Internship Projects</CardTitle>
+                <Briefcase className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{internshipProjects.length}</div>
+                <p className="text-xs text-muted-foreground">
+                  Active internship projects
                 </p>
               </CardContent>
             </Card>
@@ -811,8 +1008,8 @@ export function CoordinatorDashboard() {
                       {filteredActiveLoans.map((request) => {
                         const overdue = isOverdue(request.due_date)
                         const daysOverdue = getDaysOverdue(request.due_date)
-                        const borrower = request.student?.user?.name || request.faculty?.user?.name || "Unknown"
-                        const borrowerId = request.student?.student_id || "Faculty"
+                        const borrower = request.student?.user?.name || "Unknown"
+                        const borrowerId = request.student?.student_id || "N/A"
                         
                         return (
                           <TableRow key={request.id} className="hover:bg-gray-50">
@@ -820,7 +1017,7 @@ export function CoordinatorDashboard() {
                               <div>
                                 <div className="font-medium text-sm">{borrower}</div>
                                 <div className="text-xs text-gray-500">
-                                  {request.student ? `SRN: ${borrowerId}` : 'Faculty'}
+                                  SRN: {borrowerId}
                                 </div>
                               </div>
                             </TableCell>
@@ -918,6 +1115,140 @@ export function CoordinatorDashboard() {
                   </Table>
                 </CardContent>
               </Card>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'internships' && (
+        <div className="space-y-4">
+          <h2 className="text-xl font-semibold">Internship Management</h2>
+          <p className="text-gray-600">Manage your internship projects and student applications</p>
+          
+          {internshipProjects.length === 0 ? (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <Briefcase className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No internship projects assigned</h3>
+                <p className="text-gray-600">You have not been assigned any internship projects yet.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-6">
+              {internshipProjects.map((internship) => (
+                <Card key={internship.id} className="border-l-4 border-l-indigo-400">
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-lg">{internship.title}</CardTitle>
+                      <div className="flex items-center space-x-2">
+                        {getInternshipStatusBadge(internship.status)}
+                        {!internship.isAccepted && (
+                          <Button 
+                            size="sm"
+                            onClick={() => acceptInternshipProject(internship.id)}
+                          >
+                            Accept Project
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    <CardDescription>
+                      <div className="flex items-center space-x-4">
+                        <span>Duration: {internship.duration}</span>
+                        <span>•</span>
+                        <span>Slots: {internship.slots}</span>
+                        <span>•</span>
+                        <span>
+                          {new Date(internship.startDate).toLocaleDateString()} - {new Date(internship.endDate).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div>
+                      <h4 className="font-medium mb-2">Description</h4>
+                      <p className="text-sm text-gray-600">{internship.description}</p>
+                    </div>
+                    
+                    <div>
+                      <h4 className="font-medium mb-2">Required Skills</h4>
+                      <p className="text-sm text-gray-600">{internship.skills}</p>
+                    </div>
+
+                    {internship.isAccepted && (
+                      <div>
+                        <div className="flex items-center justify-between mb-4">
+                          <h4 className="font-medium">Student Applications</h4>
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => fetchInternshipApplications(internship.id)}
+                          >
+                            <RefreshCw className="h-4 w-4 mr-1" />
+                            Refresh
+                          </Button>
+                        </div>
+                        
+                        {(!internship.applications || internship.applications.length === 0) ? (
+                          <div className="text-center py-8">
+                            <Users className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                            <p className="text-sm text-gray-500">No applications yet</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {internship.applications.map((application) => (
+                              <div key={application.id} className="border rounded-lg p-4">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center space-x-3">
+                                    <Avatar>
+                                      <AvatarFallback>
+                                        {application.student.user.name
+                                          .split(" ")
+                                          .map((n) => n[0])
+                                          .join("")}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div>
+                                      <h5 className="font-medium">{application.student.user.name}</h5>
+                                      <p className="text-sm text-gray-600">SRN: {application.student.student_id}</p>
+                                      <p className="text-sm text-gray-500">
+                                        Applied: {new Date(application.appliedAt).toLocaleDateString()}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center space-x-2">
+                                    {getApplicationStatusBadge(application.status)}
+                                    {application.status === "PENDING" && (
+                                      <div className="flex space-x-1">
+                                        <Button 
+                                          size="sm"
+                                          variant="outline"
+                                          className="text-red-600"
+                                          onClick={() => handleInternshipApplicationStatus(application.id, "REJECTED", internship.id)}
+                                        >
+                                          <XCircle className="h-4 w-4 mr-1" />
+                                          Reject
+                                        </Button>
+                                        <Button 
+                                          size="sm"
+                                          onClick={() => handleInternshipApplicationStatus(application.id, "ACCEPTED", internship.id)}
+                                        >
+                                          <CheckCircle className="h-4 w-4 mr-1" />
+                                          Accept
+                                        </Button>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
             </div>
           )}
         </div>

@@ -13,6 +13,7 @@ import { ManageClassSchedules } from "@/components/pages/admin/manage-class-sche
 import { UserProfile } from "@/components/common/user-profile"
 import { ManageLibrary } from "@/components/pages/admin/manage-library"
 import { ManageDomains } from "@/components/pages/admin/manage-domains"
+import AdminInternshipManager from "@/components/internships/AdminInternshipManager"
 
 const menuItems = [
   { id: "home", label: "Dashboard", icon: Home },
@@ -20,10 +21,12 @@ const menuItems = [
   { id: "faculty", label: "Faculty", icon: Briefcase },
   { id: "students", label: "Students", icon: Users },
   { id: "courses", label: "Courses", icon: BookOpen },
+  { id: "internships", label: "Internships", icon: Briefcase },
   { id: "schedules", label: "Class Schedules", icon: Calendar },
   { id: "locations", label: "Locations", icon: MapPin },
   { id: "lab-components", label: "Lab Components", icon: Wrench },
   { id: "library", label: "Library", icon: BookOpen },
+  { id: "profile", label: "Profile", icon: UserIcon },
 ]
 
 export function AdminDashboard() {
@@ -41,6 +44,8 @@ export function AdminDashboard() {
         return <ManageStudents />
       case "courses":
         return <ManageCourses />
+      case "internships":
+        return <AdminInternshipManager />
       case "schedules":
         return <ManageClassSchedules />
       case "locations":
