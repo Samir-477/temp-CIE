@@ -6,8 +6,8 @@ export async function POST(request: NextRequest) {
   const userId = request.headers.get('x-user-id');
   if (!userId) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   const user = await getUserById(userId);
-  if (!user || user.role !== 'admin') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (!user || (user.role !== "admin" && user.role !== "ADMIN")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const data = await request.json();
   const { title, description, duration, skills, facultyId, slots, startDate, endDate } = data;

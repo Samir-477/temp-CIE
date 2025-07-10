@@ -6,7 +6,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   const userId = request.headers.get('x-user-id');
   if (!userId) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   const user = await getUserById(userId);
-  if (!user || user.role !== 'faculty') {
+  if (!user || (user.role !== 'faculty' && user.role !== 'FACULTY')) {
     return NextResponse.json({ error: 'Forbidden - Faculty access required' }, { status: 403 });
   }
   const internshipId = params.id;

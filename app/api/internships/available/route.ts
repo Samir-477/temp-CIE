@@ -11,12 +11,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
     let internships;
-    if (user.role === 'faculty') {
+    if (user.role === 'faculty' || user.role === 'FACULTY') {
       internships = await prisma.internshipProject.findMany({
         where: { facultyId: userId },
         include: { faculty: true },
       });
-    } else if (user.role === 'student') {
+    } else if (user.role === 'student' || user.role === 'STUDENT') {
       internships = await prisma.internshipProject.findMany({
         where: { isAccepted: true },
         include: { faculty: true },

@@ -18,6 +18,8 @@ const StudentInternshipDashboard = () => {
   const [selected, setSelected] = useState<any>(null);
   const [form, setForm] = useState({ name: '', email: '', phone: '', degree: '', resume: null });
   const [submitting, setSubmitting] = useState(false);
+  const [appliedIds, setAppliedIds] = useState<string[]>([]);
+  const [appliedMap, setAppliedMap] = useState<{ [internshipId: string]: string }>( {} ); // internshipId -> status
 
   useEffect(() => {
     fetchInternships();
@@ -25,9 +27,20 @@ const StudentInternshipDashboard = () => {
 
   const fetchInternships = async () => {
     setLoading(true);
-    const res = await fetch('/api/internships/available');
+    const res = await fetch('/api/internships/available', {
+      headers: { 'x-user-id': getUserId() }
+    });
     const data = await res.json();
     setInternships(data.internships || []);
+    // Fetch applications for this student
+    const appsRes = await fetch('/api/applications?studentId=' + getUserId());
+    const appsData = await appsRes.json();
+    // Map internshipId to status
+    const map: { [internshipId: string]: string } = {};
+    (appsData.applications || []).forEach((a: any) => {
+      map[a.internshipId] = a.status;
+    });
+    setAppliedMap(map);
     setLoading(false);
   };
 
@@ -76,6 +89,14 @@ const StudentInternshipDashboard = () => {
     if (res.ok) {
       toast({ title: 'Application submitted!' });
       closeModal();
+      // After successful application, refresh applications
+      const appsRes = await fetch('/api/applications?studentId=' + getUserId());
+      const appsData = await appsRes.json();
+      const map: { [internshipId: string]: string } = {};
+      (appsData.applications || []).forEach((a: any) => {
+        map[a.internshipId] = a.status;
+      });
+      setAppliedMap(map);
     } else {
       const err = await res.json();
       toast({ title: 'Error', description: err.error || 'Failed to apply', variant: 'destructive' });
@@ -96,7 +117,14 @@ const StudentInternshipDashboard = () => {
               <div className="text-sm">Skills: {internship.skills.join(', ')}</div>
               <div className="text-sm">Mentor: {internship.mentor?.name || 'N/A'}</div>
             </div>
-            <Button onClick={() => openApply(internship)}>Apply</Button>
+            <Button
+              onClick={() => openApply(internship)}
+              disabled={!!appliedMap[internship.id]}
+            >
+              {appliedMap[internship.id]
+                ? (appliedMap[internship.id].charAt(0).toUpperCase() + appliedMap[internship.id].slice(1).toLowerCase())
+                : 'Apply'}
+            </Button>
           </Card>
         ))}
       </div>

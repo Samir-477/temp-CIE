@@ -6,7 +6,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   const userId = request.headers.get('x-user-id');
   if (!userId) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   const user = await getUserById(userId);
-  if (!user || user.role !== 'faculty') {
+  if (!user || (user.role !== 'faculty' && user.role !== 'FACULTY')) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
   const internshipId = params.id;
@@ -20,7 +20,13 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   try {
     const applications = await prisma.application.findMany({
       where: { internshipId },
-      include: { student: { select: { id: true, name: true, email: true } } },
+      select: {
+        id: true,
+        resumeUrl: true,
+        status: true,
+        createdAt: true,
+        student: { select: { id: true, name: true, email: true } }
+      }
     });
     return NextResponse.json({ applications });
   } catch (error) {
