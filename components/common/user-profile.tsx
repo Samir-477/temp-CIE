@@ -130,7 +130,9 @@ export function UserProfile() {
   const [resumeName, setResumeName] = React.useState<string | null>(null);
   const [resumeUrl, setResumeUrl] = React.useState<string | null>(null);
   const [isUploadingResume, setIsUploadingResume] = React.useState(false);
-  const { user } = useAuth();
+  const [selectedFile, setSelectedFile] = React.useState<File | null>(null);
+  const [pendingImage, setPendingImage] = React.useState<string | null>(null);
+  const { user, refreshUser } = useAuth();
   const { toast } = useToast();
   const profile = React.useMemo(() => buildProfileData(user), [user]);
 
@@ -233,7 +235,7 @@ export function UserProfile() {
           <div className="relative">
             <Avatar className="h-28 w-28 ring-4 ring-blue-200 shadow-lg rounded-full">
               <AvatarImage 
-                src={previewImage || user?.image || undefined} 
+                src={pendingImage || (user as any)?.image_path || '/profile-img/placeholder-user.jpg'} 
                 alt={user?.name || 'User avatar'} 
               />
               <AvatarFallback className="text-4xl font-bold bg-blue-100 text-blue-700">
@@ -254,12 +256,12 @@ export function UserProfile() {
               type="file"
               accept="image/*"
               className="hidden"
-              onChange={(e)=>{
+              onChange={async (e)=>{
                 const file = e.target.files?.[0];
-                if(file){
+                if(file && user){
                   const url = URL.createObjectURL(file);
-                  setPreviewImage(url);
-                  // TODO: send to backend
+                  setPendingImage(url);
+                  setSelectedFile(file);
                 }
               }}
             />
@@ -391,6 +393,30 @@ export function UserProfile() {
 
         </CardContent>
       </Card>
+      {selectedFile && (
+        <Button className="mt-2" onClick={async () => {
+          if (!selectedFile || !user) return;
+          const formData = new FormData();
+          formData.append('file', selectedFile);
+          const uploadRes = await fetch('/api/upload-profile-photo', { method: 'POST', body: formData });
+          if (uploadRes.ok) {
+            const data = await uploadRes.json();
+            await fetch(`/api/users/${user.id}/profile-photo`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ imageUrl: data.url }),
+            });
+            setPendingImage(null);
+            setSelectedFile(null);
+            toast({ title: 'Profile photo updated!' });
+            await refreshUser();
+          } else {
+            toast({ title: 'Error', description: 'Failed to upload profile photo', variant: 'destructive' });
+          }
+        }}>
+          Save
+        </Button>
+      )}
     </div>
   );
 }

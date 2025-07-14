@@ -9,6 +9,7 @@ export interface AuthUser {
   phone?: string
   joinDate: Date
   profileData?: any
+  image_path?: string
 }
 
 export async function authenticateUser(email: string, password: string): Promise<AuthUser | null> {
@@ -54,6 +55,7 @@ export async function authenticateUser(email: string, password: string): Promise
       phone: user.phone || undefined,
       joinDate: user.join_date,
       profileData,
+      image_path: user.image_path
     }
   } catch (error) {
     console.error('Authentication error:', error)
@@ -99,6 +101,7 @@ export async function getUserById(id: string): Promise<AuthUser | null> {
       phone: user.phone || undefined,
       joinDate: user.join_date,
       profileData,
+      image_path: user.image_path
     }
   } catch (error) {
     console.error('Get user by ID error:', error)

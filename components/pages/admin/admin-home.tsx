@@ -2,14 +2,17 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Users, GraduationCap, BookOpen, MapPin, Wrench, TrendingUp } from "lucide-react"
+
 import { useRef, useState, useEffect } from "react"
 import { useAuth } from "@/components/auth-provider"
+
 
 interface AdminHomeProps {
   onPageChange?: (page: string) => void
 }
 
 export function AdminHome({ onPageChange }: AdminHomeProps) {
+
   const { user } = useAuth()
   const [dashboardData, setDashboardData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -43,34 +46,43 @@ export function AdminHome({ onPageChange }: AdminHomeProps) {
     {
       title: "Faculty",
       value: dashboardData.stats.faculty.toString(),
+
       description: "Active",
       icon: Users,
       color: "text-blue-600",
     },
     {
       title: "Students",
+
       value: dashboardData.stats.students.toString(),
+
       description: "Enrolled",
       icon: GraduationCap,
       color: "text-green-600",
     },
     {
       title: "Courses",
+
       value: dashboardData.stats.courses.toString(),
+
       description: "Currently offered",
       icon: BookOpen,
       color: "text-purple-600",
     },
     {
       title: "Locations",
+
       value: dashboardData.stats.locations.toString(),
       description: "Available spaces",
+
       icon: MapPin,
       color: "text-orange-600",
     },
     {
       title: "Lab Components",
+
       value: dashboardData.stats.labComponents.toString(),
+
       description: "Total inventory",
       icon: Wrench,
       color: "text-red-600",

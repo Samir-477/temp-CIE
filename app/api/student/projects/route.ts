@@ -13,7 +13,9 @@ export async function GET(request: Request) {
     }
 
     const user = await getUserById(userId)
+
     if (!user || user.role !== "STUDENT") {
+
       return NextResponse.json({ error: "Access denied" }, { status: 403 })
     }
 

@@ -9,6 +9,7 @@ export interface User {
   email: string
   name: string
   image?: string
+  image_path?: string // <-- add this line
   role: UserRole
   phone?: string
   join_date: Date
@@ -98,6 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setTimeout(() => {
           setUser(userData)
           localStorage.setItem("cie-user", JSON.stringify(userData))
+          localStorage.setItem("userId", userData.id) // <-- Ensure this line is present
           console.log("User state updated after login")
         }, 0)
         

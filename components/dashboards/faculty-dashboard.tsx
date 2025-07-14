@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { Home, Users, User as UserIcon, MapPin, Calendar, FolderOpen, ClipboardCheck, Wrench, BookOpen, Settings, Award } from "lucide-react"
+import { Home, Users, User as UserIcon, MapPin, Calendar, FolderOpen, ClipboardCheck, Wrench, BookOpen, Settings, Briefcase, Award } from "lucide-react"
 import { FacultyHome } from "@/components/pages/faculty/faculty-home"
 import { LabComponentsManagement } from "@/components/pages/faculty/lab-components-management"
 import { LabComponentsRequest } from "@/components/pages/faculty/lab-components-request"
@@ -14,6 +14,7 @@ import { LocationBooking } from "@/components/pages/faculty/location-booking"
 import { UserProfile } from "@/components/common/user-profile"
 import { LibraryDashboard } from "@/components/pages/common/library-dashboard"
 import { CoordinatorDashboard } from "@/components/pages/faculty/coordinator-dashboard"
+import FacultyInternshipDashboard from "@/components/internships/FacultyInternshipDashboard"
 import { useAuth } from "@/components/auth-provider"
 
 export function FacultyDashboard() {
@@ -51,6 +52,7 @@ export function FacultyDashboard() {
       { id: "locations", label: "Book Locations", icon: MapPin },
       { id: "calendar", label: "Calendar", icon: Calendar },
       { id: "projects", label: "Projects", icon: FolderOpen },
+      { id: "internships", label: "Internships", icon: Briefcase },
       { id: "attendance", label: "Attendance", icon: ClipboardCheck },
       { id: "lab-components", label: "Lab Components", icon: Wrench },
       { id: "library", label: "Library", icon: BookOpen },
@@ -61,8 +63,10 @@ export function FacultyDashboard() {
       baseItems.splice(1, 0, { id: "coordinator", label: "CIE Coordinator", icon: Award })
     }
 
+
     // Remove Lab Management if present (ensure it is not in the sidebar)
     return baseItems.filter(item => item.id !== "lab-management")
+
   }
 
   const renderPage = () => {
@@ -81,6 +85,8 @@ export function FacultyDashboard() {
         return <FacultyCalendar />
       case "projects":
         return <ProjectManagement />
+      case "internships":
+        return <FacultyInternshipDashboard />
       case "attendance":
         return <AttendanceManagement />
       case "lab-components":

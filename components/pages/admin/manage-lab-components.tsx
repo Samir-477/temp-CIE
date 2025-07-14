@@ -17,7 +17,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Plus, Package, Trash2, RefreshCw, Edit, ChevronRight, ChevronLeft, Info, Receipt, History, Image } from "lucide-react"
+import { Plus, Package, Trash2, RefreshCw, Edit, ChevronRight, ChevronLeft, Info, Receipt, History, Image, Upload } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/components/auth-provider"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -128,6 +128,12 @@ export function ManageLabComponents() {
   // Refs for click-outside detection
   const locationInputRef = useRef<HTMLDivElement>(null)
   const categoryInputRef = useRef<HTMLDivElement>(null)
+
+  // Bulk upload state
+  const [isBulkUploadDialogOpen, setIsBulkUploadDialogOpen] = useState(false)
+  const [bulkUploadFile, setBulkUploadFile] = useState<File | null>(null)
+  const [isBulkUploading, setIsBulkUploading] = useState(false)
+  const [bulkUploadResult, setBulkUploadResult] = useState<any>(null)
 
   useEffect(() => {
     fetchComponents()
@@ -414,6 +420,10 @@ export function ManageLabComponents() {
   }
 
   const handleDeleteComponent = async (componentId: string) => {
+    if (!window.confirm("Are you sure you want to delete this component? This will also delete all related component requests.")) {
+      return
+    }
+
     try {
       const response = await fetch(`/api/lab-components/${componentId}`, {
         method: "DELETE",
@@ -423,16 +433,17 @@ export function ManageLabComponents() {
         setComponents((prev) => prev.filter((component) => component.id !== componentId))
         toast({
           title: "Success",
-          description: "Component deleted successfully",
+          description: "Component and all related requests deleted successfully",
         })
       } else {
-        throw new Error("Failed to delete component")
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Failed to delete component")
       }
     } catch (error) {
       console.error("Error deleting component:", error)
       toast({
         title: "Error",
-        description: "Failed to delete component",
+        description: error instanceof Error ? error.message : "Failed to delete component",
         variant: "destructive",
       })
     }
@@ -1028,6 +1039,112 @@ export function ManageLabComponents() {
     }
   }
 
+  // Bulk upload functions
+  const handleBulkUploadFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      if (file.type === 'text/csv' || file.name.endsWith('.csv')) {
+        setBulkUploadFile(file)
+        console.log('File selected:', file.name, 'Size:', file.size, 'Type:', file.type)
+      } else {
+        toast({
+          title: "Invalid File",
+          description: "Please select a valid CSV file",
+          variant: "destructive",
+        })
+        setBulkUploadFile(null)
+      }
+    } else {
+      setBulkUploadFile(null)
+    }
+  }
+
+  const handleBulkUpload = async () => {
+    if (!bulkUploadFile || !user) {
+      toast({
+        title: "No File Selected",
+        description: "Please select a CSV file to upload",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Additional validation
+    if (bulkUploadFile.size === 0) {
+      toast({
+        title: "Empty File",
+        description: "The selected file is empty",
+        variant: "destructive",
+      })
+      return
+    }
+
+    console.log('Uploading file:', bulkUploadFile.name, 'Size:', bulkUploadFile.size, 'Type:', bulkUploadFile.type)
+
+    setIsBulkUploading(true)
+    setBulkUploadResult(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('csv', bulkUploadFile)
+
+      const response = await fetch('/api/lab-components/bulk-upload', {
+        method: 'POST',
+        headers: {
+          'x-user-id': user.id,
+        },
+        body: formData
+      })
+
+      const result = await response.json()
+
+      if (response.ok) {
+        setBulkUploadResult(result)
+        toast({
+          title: "Bulk Upload Successful",
+          description: `Processed ${result.processed} components with ${result.errors} errors`,
+        })
+        // Refresh the components list
+        fetchComponents()
+        setIsBulkUploadDialogOpen(false)
+        // Reset the file input
+        setBulkUploadFile(null)
+      } else {
+        toast({
+          title: "Bulk Upload Failed",
+          description: result.error || 'Upload failed',
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error('Bulk upload error:', error)
+      toast({
+        title: "Bulk Upload Error",
+        description: "Network error occurred",
+        variant: "destructive",
+      })
+    } finally {
+      setIsBulkUploading(false)
+    }
+  }
+
+  const downloadSampleCSV = () => {
+    const csvContent = `component_name,component_description,component_specification,component_quantity,component_tag_id,component_category,component_location,invoice_number,purchase_value,purchased_from,purchase_currency,purchase_date,front_image_id,back_image_id
+"Arduino Uno R3","Arduino Uno is an open-source microcontroller board based on the ATmega328P, designed for building interactive electronics projects with ease.","ATmega328P MCU, 14 digital I/O pins, 6 analog inputs, 16 MHz clock speed, USB-powered, 5V operating voltage.",10,445RO,Electrical,"LAB C",inv2233444,300,amazon,INR,2025-06-10,"1751346972100_arduino -front.jpg","1751346972405_arduino-back.jpg"
+"NodeMCU","NodeMCU ESP8266 is a low-power, Wi-Fi-enabled microcontroller board ideal for IoT applications, offering GPIOs, serial communication, and easy programming via USB.","ESP8266 Wi-Fi SoC, 80 MHz clock, 4MB flash, 11 digital GPIOs, USB-to-serial, operates at 3.3V logic.",8,ESP8266,Electrical,"Storage ROOM",invc223387,120,Flipcart,INR,2025-06-06,"1750845469301_WhatsApp Image 2025-06-19 at 21.50.45.jpeg","1750845469275_WhatsApp Image 2025-06-19 at 21.50.39.jpeg"
+"Breadboard","High-quality breadboard for electronic prototyping and circuit testing.","830 tie points, 65 rows, 2 power rails, 0.1 inch spacing, compatible with Arduino and other microcontrollers.",5,BRD001,Electrical,"LAB C",inv2025001,50,amazon,INR,2025-01-15,"1751347927009_breadboard-front.jpg","1751347927531_breadboard-back.jpg"`
+
+    const blob = new Blob([csvContent], { type: 'text/csv' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'sample-lab-components.csv'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1107,6 +1224,78 @@ export function ManageLabComponents() {
             </DialogContent>
           </Dialog>
 
+          <Dialog open={isBulkUploadDialogOpen} onOpenChange={(open) => {
+            setIsBulkUploadDialogOpen(open)
+            if (!open) {
+              // Reset bulk upload state when dialog closes
+              setBulkUploadFile(null)
+              setBulkUploadResult(null)
+            }
+          }}>
+            <DialogTrigger asChild>
+              <Button variant="outline">
+                <Upload className="h-4 w-4 mr-2" />
+                Bulk Upload
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Bulk Upload Lab Components</DialogTitle>
+                <DialogDescription>
+                  Upload a CSV file to add multiple lab components at once.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="csv-file">Select CSV File</Label>
+                  <Input
+                    id="csv-file"
+                    type="file"
+                    accept=".csv"
+                    onChange={handleBulkUploadFileChange}
+                    disabled={isBulkUploading}
+                  />
+                  {bulkUploadFile && (
+                    <p className="text-sm text-green-600 mt-1">
+                      ✓ File selected: {bulkUploadFile.name} ({(bulkUploadFile.size / 1024).toFixed(1)} KB)
+                    </p>
+                  )}
+                  <p className="text-sm text-muted-foreground mt-1">
+                    The CSV should include headers for: component_name, component_description, component_specification, component_quantity, component_tag_id, component_category, component_location, invoice_number, purchase_value, purchased_from, purchase_currency, purchase_date, front_image_id, back_image_id
+                  </p>
+                </div>
+                <Button onClick={downloadSampleCSV} variant="outline" size="sm">
+                  Download Sample CSV
+                </Button>
+                {bulkUploadResult && (
+                  <div className="space-y-2">
+                    <h4 className="font-medium">Upload Results:</h4>
+                    <div className="text-sm space-y-1">
+                      <div>Total Rows: {bulkUploadResult.total_rows}</div>
+                      <div>Processed: {bulkUploadResult.processed}</div>
+                      <div>Errors: {bulkUploadResult.errors}</div>
+                    </div>
+                    {bulkUploadResult.error_details && bulkUploadResult.error_details.length > 0 && (
+                      <div className="max-h-20 overflow-y-auto text-xs text-red-600">
+                        {bulkUploadResult.error_details.map((error: string, index: number) => (
+                          <div key={index}>{error}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <DialogFooter>
+                <Button
+                  onClick={handleBulkUpload}
+                  disabled={!bulkUploadFile || isBulkUploading}
+                >
+                  {isBulkUploading ? "Uploading..." : "Upload"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
           <Dialog open={isAddDialogOpen} onOpenChange={(open) => {
             setIsAddDialogOpen(open)
             if (!open) {
@@ -1119,10 +1308,11 @@ export function ManageLabComponents() {
                 Add Component
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-7xl w-full max-h-[98vh] overflow-hidden">
+            <DialogContent className="max-w-5xl w-full max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Add New Lab Component</DialogTitle>
               </DialogHeader>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 h-[calc(90vh-120px)] overflow-y-auto">
                 {/* Left Column: Basic Info & Images */}
                 <div className="space-y-6 pr-3 pl-3">
@@ -1303,12 +1493,68 @@ export function ManageLabComponents() {
                             src={backImagePreview}
                             alt="Back Preview"
                               className="w-full h-40 object-contain rounded-lg bg-gray-50"
+
+                          />
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-3">
+                      <Label htmlFor="backImage" className="text-sm font-medium">Back Image *</Label>
+                      <div className={`border-2 border-dashed rounded-lg h-10 p-1 flex items-center hover:border-gray-400 transition-colors ${formErrors.backImage ? 'border-red-500' : 'border-gray-300'}`}> 
+                        <Input
+                          id="backImage"
+                          type="file"
+                          accept="image/*"
+                          onChange={e => setBackImageFile(e.target.files?.[0] || null)}
+                          className="border-0 p-0 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                        />
+                      </div>
+                      {formErrors.backImage && (
+                        <p className="text-red-500 text-xs">{formErrors.backImage}</p>
+                      )}
+                      {backImagePreview && (
+                        <div className="mt-2">
+                          <Label className="text-xs font-medium text-gray-600">Preview:</Label>
+                          <img
+                            src={backImagePreview}
+                            alt="Back Preview"
+                            className="mt-1 w-full h-64 object-contain rounded-lg bg-gray-50"
                           />
                         </div>
                       )}
                     </div>
                   </div>
                 </div>
+
+                {/* Description and Specifications Row */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="description" className="text-sm font-medium">Description *</Label>
+                    <Textarea
+                      id="description"
+                      value={newComponent.component_description}
+                      onChange={(e) => setNewComponent((prev) => ({ ...prev, component_description: e.target.value }))}
+                      placeholder="Provide a detailed description of the component..."
+                      rows={4}
+                      className={`mt-0 ${formErrors.component_description ? 'border-red-500' : ''}`}
+                    />
+                    {formErrors.component_description && (
+                      <p className="text-red-500 text-xs mt-1">{formErrors.component_description}</p>
+                    )}
+                  </div>
+                  <div>
+                    <Label htmlFor="specifications" className="text-sm font-medium">Specifications</Label>
+                    <Textarea
+                      id="specifications"
+                      value={newComponent.component_specification}
+                      onChange={(e) => setNewComponent((prev) => ({ ...prev, component_specification: e.target.value }))}
+                      placeholder="Technical specifications, dimensions, power requirements, etc."
+                      rows={4}
+                      className="mt-1"
+                    />
+                  </div>
+                </div>
+
                 </div>
                 {/* Right Column: Details & Purchase Info */}
                 <div className="space-y-6 pr-2">
@@ -1352,6 +1598,7 @@ export function ManageLabComponents() {
                         <Label htmlFor="purchasedCurrency">Currency</Label>
                         <Select value={newComponent.purchase_currency} onValueChange={value => setNewComponent(prev => ({ ...prev, purchase_currency: value }))}>
                           <SelectTrigger className={`mt-1 ${formErrors.purchase_currency ? 'border-red-500' : ''}`}><SelectValue placeholder="Select currency" /></SelectTrigger>
+
                         <SelectContent>
                           <SelectItem value="INR">INR - Indian Rupee</SelectItem>
                           <SelectItem value="USD">USD - US Dollar</SelectItem>
@@ -1359,18 +1606,27 @@ export function ManageLabComponents() {
                           <SelectItem value="GBP">GBP - British Pound</SelectItem>
                         </SelectContent>
                       </Select>
+
                         {formErrors.purchase_currency && <p className="text-red-500 text-xs mt-1">{formErrors.purchase_currency}</p>}
                     </div>
                   </div>
                 </div>
                 </div>
+
                 {/* Form Actions */}
-                <div className="col-span-1 md:col-span-2 flex justify-end space-x-3 pt-4 border-t mt-4">
-                  <Button variant="outline" onClick={() => setIsAddDialogOpen(false)} className="px-6">Cancel</Button>
+                <div className="flex justify-end space-x-3 pt-4 border-t">
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsAddDialogOpen(false)}
+                    className="px-6"
+                  >
+                    Cancel
+                  </Button>
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <span tabIndex={0}>
+
                           <Button 
                             type="button"
                             onClick={(e) => {
@@ -1381,6 +1637,7 @@ export function ManageLabComponents() {
                             disabled={!isAddFormValid || isSubmitting}
                           >
                             {isSubmitting ? "Adding..." : "Add Component"}
+
                           </Button>
                         </span>
                       </TooltipTrigger>

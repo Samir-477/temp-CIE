@@ -35,7 +35,10 @@ import {
   TrendingUp,
   RefreshCw,
   Filter,
-  Search
+  Search,
+  Briefcase,
+  Users,
+  Building
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/components/auth-provider"
@@ -114,6 +117,37 @@ interface LibraryRequest {
   }
 }
 
+interface InternshipProject {
+  id: string
+  title: string
+  description: string
+  duration: string
+  skills: string
+  slots: number
+  startDate: string
+  endDate: string
+  facultyId: string
+  isAccepted: boolean
+  status: string
+  faculty?: {
+    id: string
+    name: string
+  }
+  applications?: InternshipApplication[]
+}
+
+interface InternshipApplication {
+  id: string
+  studentId: string
+  internshipId: string
+  status: string
+  appliedAt: string
+  student: {
+    user: { name: string; email: string }
+    student_id: string
+  }
+}
+
 type RequestUnion = ComponentRequest | LibraryRequest
 
 function isComponentRequest(request: RequestUnion): request is ComponentRequest {
@@ -129,6 +163,7 @@ export function CoordinatorDashboard() {
   const { toast } = useToast()
   const [componentRequests, setComponentRequests] = useState<ComponentRequest[]>([])
   const [libraryRequests, setLibraryRequests] = useState<LibraryRequest[]>([])
+  const [internshipProjects, setInternshipProjects] = useState<InternshipProject[]>([])
   const [loading, setLoading] = useState(true)
   const [facultyNotes, setFacultyNotes] = useState("")
   // Set default tab to 'analytics'
@@ -160,6 +195,7 @@ export function CoordinatorDashboard() {
   useEffect(() => {
     fetchRequests()
     fetchCoordinatorDomains()
+    fetchInternships()
   }, [])
 
   // Auto-select role if faculty has only one role
@@ -247,6 +283,106 @@ export function CoordinatorDashboard() {
       })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchInternships = async () => {
+    try {
+      const response = await fetch("/api/internships", {
+        headers: { "x-user-id": user?.id || "" }
+      })
+      const data = await response.json()
+      
+      // Filter internships where current user is the faculty
+      const userInternships = (data.internships || []).filter((internship: InternshipProject) => 
+        internship.facultyId === user?.id
+      )
+      
+      setInternshipProjects(userInternships)
+    } catch (error) {
+      console.error("Error fetching internships:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load internships",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const fetchInternshipApplications = async (internshipId: string) => {
+    try {
+      const response = await fetch(`/api/internships/${internshipId}/applicants`, {
+        headers: { "x-user-id": user?.id || "" }
+      })
+      const data = await response.json()
+      
+      // Update the specific internship with applications
+      setInternshipProjects(prev => 
+        prev.map(internship => 
+          internship.id === internshipId 
+            ? { ...internship, applications: data.applications || [] }
+            : internship
+        )
+      )
+    } catch (error) {
+      console.error("Error fetching internship applications:", error)
+    }
+  }
+
+  const handleInternshipApplicationStatus = async (applicationId: string, status: string, internshipId: string) => {
+    try {
+      const response = await fetch(`/api/applications/${applicationId}/status`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": user?.id || ""
+        },
+        body: JSON.stringify({ status })
+      })
+
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: `Application ${status.toLowerCase()} successfully`
+        })
+        // Refresh applications for this internship
+        fetchInternshipApplications(internshipId)
+      } else {
+        const error = await response.json()
+        throw new Error(error.error)
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to update application",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const acceptInternshipProject = async (internshipId: string) => {
+    try {
+      const response = await fetch(`/api/internships/${internshipId}/accept`, {
+        method: "POST",
+        headers: { "x-user-id": user?.id || "" }
+      })
+
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: "Internship project accepted successfully"
+        })
+        fetchInternships()
+      } else {
+        const error = await response.json()
+        throw new Error(error.error)
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to accept project",
+        variant: "destructive",
+      })
     }
   }
 
@@ -449,6 +585,36 @@ export function CoordinatorDashboard() {
         return <Badge className={`bg-purple-100 text-purple-800 ${baseClass}`}>Student Confirmed Return</Badge>
       case "RETURNED":
         return <Badge className={`bg-green-100 text-green-800 ${baseClass}`}>Returned</Badge>
+      case "REJECTED":
+        return <Badge className={`bg-red-100 text-red-800 ${baseClass}`}>Rejected</Badge>
+      default:
+        return <Badge variant="outline">{status}</Badge>
+    }
+  }
+
+  const getInternshipStatusBadge = (status: string) => {
+    const baseClass = "font-medium"
+    switch (status) {
+      case "OPEN":
+        return <Badge className={`bg-green-100 text-green-800 ${baseClass}`}>Open</Badge>
+      case "CLOSED":
+        return <Badge className={`bg-red-100 text-red-800 ${baseClass}`}>Closed</Badge>
+      case "IN_PROGRESS":
+        return <Badge className={`bg-blue-100 text-blue-800 ${baseClass}`}>In Progress</Badge>
+      case "COMPLETED":
+        return <Badge className={`bg-gray-100 text-gray-800 ${baseClass}`}>Completed</Badge>
+      default:
+        return <Badge variant="outline">{status}</Badge>
+    }
+  }
+
+  const getApplicationStatusBadge = (status: string) => {
+    const baseClass = "font-medium"
+    switch (status) {
+      case "PENDING":
+        return <Badge className={`bg-yellow-100 text-yellow-800 ${baseClass}`}>Pending</Badge>
+      case "ACCEPTED":
+        return <Badge className={`bg-green-100 text-green-800 ${baseClass}`}>Accepted</Badge>
       case "REJECTED":
         return <Badge className={`bg-red-100 text-red-800 ${baseClass}`}>Rejected</Badge>
       default:
@@ -673,8 +839,10 @@ export function CoordinatorDashboard() {
             
             <p className="text-gray-600">Choose which coordinator role you want to manage</p>
                 </div>
+
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
+
         <Card 
               className="cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 hover:bg-blue-50 hover:border-blue-300"
               onClick={() => setSelectedRole('library')}
@@ -728,6 +896,7 @@ export function CoordinatorDashboard() {
             <span>Lab Coordinator</span>
           </Button>
             </div>
+
       )}
 
       {/* Role-Specific Dashboard Content */}
@@ -769,6 +938,7 @@ export function CoordinatorDashboard() {
               <button
                 className={`flex flex-col items-center justify-center px-8 py-6 rounded-2xl border transition-all duration-200 shadow-sm min-w-[220px] max-w-[260px] h-[110px] text-center select-none
                   ${activeTab === 'history' ? 'border-orange-500 bg-orange-50 ring-2 ring-orange-400 text-orange-600' : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50 bg-white text-gray-800'}`}
+
           onClick={() => setActiveTab('history')}
         >
                 <Clock className={`h-6 w-6 mb-1 ${activeTab === 'history' ? 'text-orange-600' : 'text-orange-400'}`} />
@@ -785,6 +955,7 @@ export function CoordinatorDashboard() {
               <h2 className="text-xl font-semibold">{roleName} Analytics Dashboard</h2>
               
           
+
           {/* Minimal Stat Cards Row - outside the graph section */}
           <div className="flex flex-row flex-wrap gap-2 mb-2 justify-center">
             <div className="flex-1 min-w-[100px] max-w-[140px] bg-white rounded shadow-sm px-2 py-1 flex flex-col items-center justify-center text-center border border-gray-200">
@@ -814,6 +985,7 @@ export function CoordinatorDashboard() {
                 ]}
               />
             </div>
+
           </div>
         </div>
       )}
@@ -1217,10 +1389,12 @@ export function CoordinatorDashboard() {
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
+
               <HistoryTable data={historyRequests} roleName={roleName} searchTerm={historySearchTerm} filter={historyFilter} isOverdue={isOverdue} />
             </div>
           )}
         </>
+
       )}
     </div>
   )
