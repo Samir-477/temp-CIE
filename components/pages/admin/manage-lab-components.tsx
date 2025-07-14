@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -104,16 +104,30 @@ export function ManageLabComponents() {
   const [newCategory, setNewCategory] = useState("")
   const [isSavingCategory, setIsSavingCategory] = useState(false)
   const [showAddCategory, setShowAddCategory] = useState(false)
+  const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null)
+  const [isDeleteCategoryDialogOpen, setIsDeleteCategoryDialogOpen] = useState(false)
   const [showAddLocation, setShowAddLocation] = useState(false)
   const [newLocation, setNewLocation] = useState("")
   const [isSavingLocation, setIsSavingLocation] = useState(false)
-  const [locationOptions, setLocationOptions] = useState<string[]>(["Lab A", "Lab B", "Lab C", "Storage Room", "Equipment Room"])
+  const [locationToDelete, setLocationToDelete] = useState<string | null>(null)
+  const [isDeleteLocationDialogOpen, setIsDeleteLocationDialogOpen] = useState(false)
+  const [locationOptions, setLocationOptions] = useState<string[]>([])
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [editingComponent, setEditingComponent] = useState<LabComponent | null>(null)
   const [imageStates, setImageStates] = useState<Record<string, boolean>>({}) // false = front, true = back
 
   // Add form validation state
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Bulk upload state
+  const [isBulkUploadDialogOpen, setIsBulkUploadDialogOpen] = useState(false)
+  const [bulkUploadFile, setBulkUploadFile] = useState<File | null>(null)
+  const [isBulkUploading, setIsBulkUploading] = useState(false)
+
+  // Refs for click-outside detection
+  const locationInputRef = useRef<HTMLDivElement>(null)
+  const categoryInputRef = useRef<HTMLDivElement>(null)
 
   // Bulk upload state
   const [isBulkUploadDialogOpen, setIsBulkUploadDialogOpen] = useState(false)
@@ -124,6 +138,7 @@ export function ManageLabComponents() {
   useEffect(() => {
     fetchComponents()
     fetchCategories()
+    fetchLocations()
   }, [])
 
   // Debug user information
@@ -133,6 +148,64 @@ export function ManageLabComponents() {
     console.log("ManageLabComponents - User name:", user?.name)
     console.log("ManageLabComponents - User role:", user?.role)
   }, [user])
+
+  // Click-outside detection for location input
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        showAddLocation &&
+        locationInputRef.current &&
+        !locationInputRef.current.contains(event.target as Node)
+      ) {
+        setShowAddLocation(false)
+        setNewLocation("")
+      }
+    }
+
+    const handleEscapeKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && showAddLocation) {
+        setShowAddLocation(false)
+        setNewLocation("")
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside)
+    document.addEventListener("keydown", handleEscapeKey)
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside)
+      document.removeEventListener("keydown", handleEscapeKey)
+    }
+  }, [showAddLocation])
+
+  // Click-outside detection for category input
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        showAddCategory &&
+        categoryInputRef.current &&
+        !categoryInputRef.current.contains(event.target as Node)
+      ) {
+        setShowAddCategory(false)
+        setNewCategory("")
+      }
+    }
+
+    const handleEscapeKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && showAddCategory) {
+        setShowAddCategory(false)
+        setNewCategory("")
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside)
+    document.addEventListener("keydown", handleEscapeKey)
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside)
+      document.removeEventListener("keydown", handleEscapeKey)
+    }
+  }, [showAddCategory])
 
   const fetchComponents = async () => {
     try {
@@ -173,6 +246,20 @@ export function ManageLabComponents() {
     }
   };
 
+  const fetchLocations = async () => {
+    try {
+      const res = await fetch("/api/lab-components/locations");
+      if (res.ok) {
+        const data = await res.json();
+        setLocationOptions(data.locations || []);
+      }
+    } catch (e) {
+      console.error("Error fetching locations:", e);
+      // Set default locations as fallback
+      setLocationOptions(["Lab A", "Lab B", "Lab C", "Storage Room", "Equipment Room"]);
+    }
+  };
+
   const filteredComponents = components.filter(
     (component) =>
       (component.component_name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
@@ -181,6 +268,16 @@ export function ManageLabComponents() {
   )
 
   const handleAddComponent = async () => {
+    // Prevent multiple submissions
+    if (isSubmitting) {
+      console.log('Already submitting, ignoring click')
+      return
+    }
+    
+    setIsSubmitting(true)
+    console.log('Starting component submission...')
+    
+    try {
     // Validate form before proceeding
     if (!validateForm()) {
       toast({
@@ -277,7 +374,6 @@ export function ManageLabComponents() {
     console.log("Frontend - handleAddComponent - user.id:", user?.id)
     console.log("Frontend - handleAddComponent - user.name:", user?.name)
 
-    try {
       const response = await fetch("/api/lab-components", {
         method: "POST",
         headers: {
@@ -317,6 +413,9 @@ export function ManageLabComponents() {
         description: error instanceof Error ? error.message : "Failed to add component",
         variant: "destructive",
       })
+    } finally {
+      setIsSubmitting(false)
+      console.log('Component submission finished')
     }
   }
 
@@ -388,23 +487,78 @@ export function ManageLabComponents() {
     if (!newCategory.trim()) return
     setIsSavingCategory(true)
     try {
-      const formatted = toTitleCase(newCategory.trim())
-      // Save new category to backend
       const res = await fetch("/api/lab-components/categories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ category: formatted })
+        body: JSON.stringify({ category: newCategory.trim() })
       })
+      
       if (res.ok) {
-        setCategoryOptions((prev) => [...prev, formatted])
-        setNewComponent((prev) => ({ ...prev, component_category: formatted }))
+        const data = await res.json()
+        const formattedCategory = data.category
+        setCategoryOptions((prev) => [...prev, formattedCategory])
+        setNewComponent((prev) => ({ ...prev, component_category: formattedCategory }))
         setNewCategory("")
+        setShowAddCategory(false)
         toast({ title: "Category added!", description: "New category added successfully." })
       } else {
-        toast({ title: "Error", description: "Failed to add category.", variant: "destructive" })
+        const error = await res.json()
+        toast({ 
+          title: "Error", 
+          description: error.error || "Failed to add category.", 
+          variant: "destructive" 
+        })
       }
+    } catch (error) {
+      console.error("Error adding category:", error)
+      toast({ 
+        title: "Error", 
+        description: "Failed to add category.", 
+        variant: "destructive" 
+      })
     } finally {
       setIsSavingCategory(false)
+    }
+  }
+
+  const handleDeleteCategory = async (category: string) => {
+    try {
+      const res = await fetch(`/api/lab-components/categories?category=${encodeURIComponent(category)}`, {
+        method: "DELETE"
+      })
+      
+      if (res.ok) {
+        setCategoryOptions((prev) => prev.filter(cat => cat !== category))
+        toast({ 
+          title: "Category removed!", 
+          description: "Category removed successfully." 
+        })
+      } else {
+        const error = await res.json()
+        if (error.componentsUsing) {
+          toast({ 
+            title: "Cannot delete category", 
+            description: `Category is being used by ${error.count} component(s). Remove components first.`, 
+            variant: "destructive" 
+          })
+        } else {
+          toast({ 
+            title: "Error", 
+            description: error.error || "Failed to delete category.", 
+            variant: "destructive" 
+          })
+        }
+      }
+    } catch (error) {
+      console.error("Error deleting category:", error)
+      toast({ 
+        title: "Error", 
+        description: "Failed to delete category.", 
+        variant: "destructive" 
+      })
+    } finally {
+      setIsDeleteCategoryDialogOpen(false)
+      setCategoryToDelete(null)
     }
   }
 
@@ -412,13 +566,78 @@ export function ManageLabComponents() {
     if (!newLocation.trim()) return
     setIsSavingLocation(true)
     try {
-      const formatted = formatLocation(newLocation.trim())
-      setLocationOptions((prev) => [...prev, formatted])
-      setNewComponent((prev) => ({ ...prev, component_location: formatted }))
-      setNewLocation("")
-      toast({ title: "Location added!", description: "New location added successfully." })
+      const res = await fetch("/api/lab-components/locations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ location: newLocation.trim() })
+      })
+      
+      if (res.ok) {
+        const data = await res.json()
+        const formattedLocation = data.location
+        setLocationOptions((prev) => [...prev, formattedLocation])
+        setNewComponent((prev) => ({ ...prev, component_location: formattedLocation }))
+        setNewLocation("")
+        setShowAddLocation(false)
+        toast({ title: "Location added!", description: "New location added successfully." })
+      } else {
+        const error = await res.json()
+        toast({ 
+          title: "Error", 
+          description: error.error || "Failed to add location.", 
+          variant: "destructive" 
+        })
+      }
+    } catch (error) {
+      console.error("Error adding location:", error)
+      toast({ 
+        title: "Error", 
+        description: "Failed to add location.", 
+        variant: "destructive" 
+      })
     } finally {
       setIsSavingLocation(false)
+    }
+  }
+
+  const handleDeleteLocation = async (location: string) => {
+    try {
+      const res = await fetch(`/api/lab-components/locations?location=${encodeURIComponent(location)}`, {
+        method: "DELETE"
+      })
+      
+      if (res.ok) {
+        setLocationOptions((prev) => prev.filter(loc => loc !== location))
+        toast({ 
+          title: "Location removed!", 
+          description: "Location removed successfully." 
+        })
+      } else {
+        const error = await res.json()
+        if (error.componentsUsing) {
+          toast({ 
+            title: "Cannot delete location", 
+            description: `Location is being used by ${error.count} component(s). Remove components first.`, 
+            variant: "destructive" 
+          })
+        } else {
+          toast({ 
+            title: "Error", 
+            description: error.error || "Failed to delete location.", 
+            variant: "destructive" 
+          })
+        }
+      }
+    } catch (error) {
+      console.error("Error deleting location:", error)
+      toast({ 
+        title: "Error", 
+        description: "Failed to delete location.", 
+        variant: "destructive" 
+      })
+    } finally {
+      setIsDeleteLocationDialogOpen(false)
+      setLocationToDelete(null)
     }
   }
 
@@ -477,9 +696,9 @@ export function ManageLabComponents() {
     return Object.keys(errors).length === 0
   }
 
-  // Check if form is valid for button state
-  const isAddFormValid = () => {
-    return (
+  // Check if form is valid for button state - using useMemo for reactivity
+  const isAddFormValid = useMemo(() => {
+    const isValid = !!(
       newComponent.component_name?.trim() &&
       newComponent.component_description?.trim() &&
       newComponent.component_category?.trim() &&
@@ -488,7 +707,29 @@ export function ManageLabComponents() {
       frontImageFile &&
       backImageFile
     )
-  }
+    
+    // Debug log to help troubleshoot
+    console.log('Form validation check:', {
+      name: !!newComponent.component_name?.trim(),
+      description: !!newComponent.component_description?.trim(), 
+      category: !!newComponent.component_category?.trim(),
+      location: !!newComponent.component_location?.trim(),
+      quantity: newComponent.component_quantity > 0,
+      frontImage: !!frontImageFile,
+      backImage: !!backImageFile,
+      isValid
+    })
+    
+    return isValid
+  }, [
+    newComponent.component_name,
+    newComponent.component_description,
+    newComponent.component_category,
+    newComponent.component_location,
+    newComponent.component_quantity,
+    frontImageFile,
+    backImageFile
+  ])
 
   const handleEditComponent = async () => {
     if (!editingComponent) return
@@ -629,6 +870,173 @@ export function ManageLabComponents() {
     setShowAddLocation(false)
     setNewCategory("")
     setNewLocation("")
+    setIsSubmitting(false)
+  }
+
+  // Bulk upload functions
+  const downloadSampleCSV = (e: React.MouseEvent) => {
+    e.preventDefault()
+    const headers = [
+      'component_name',
+      'component_description', 
+      'component_specification',
+      'component_quantity',
+      'component_tag_id',
+      'component_category',
+      'component_location',
+      'front_image_id',
+      'back_image_id',
+      'invoice_number',
+      'purchase_value',
+      'purchased_from',
+      'purchase_currency',
+      'purchase_date'
+    ]
+    
+    const sampleData = [
+      [
+        'Arduino Uno R3',
+        'Microcontroller board based on the ATmega328P',
+        'Operating Voltage: 5V, Input Voltage: 7-12V, Digital I/O Pins: 14, Flash Memory: 32KB',
+        '10',
+        'ARD001',
+        'Electrical',
+        'Lab A',
+        'arduino-front.jpg',
+        'arduino-back.jpg',
+        'INV001',
+        '750.00',
+        'Electronics Store',
+        'INR',
+        '2024-01-15'
+      ],
+      [
+        'NodeMCU ESP8266',
+        'Wi-Fi enabled microcontroller development board',
+        'Processor: ESP8266, Flash: 4MB, GPIO: 10, Wi-Fi: 802.11 b/g/n',
+        '8',
+        'ESP001',
+        'Electrical',
+        'Lab A',
+        'nodemcu-front.jpg',
+        'nodemcu-back.jpg',
+        'INV002',
+        '450.00',
+        'Tech Components Ltd',
+        'INR',
+        '2024-01-20'
+      ],
+      [
+        'Breadboard 830 Point',
+        'Solderless breadboard for prototyping electronic circuits',
+        'Tie Points: 830, Size: 165mm x 55mm, ABS Plastic Base',
+        '15',
+        'BB001',
+        'Electrical',
+        'Lab B',
+        'breadboard-front.jpg',
+        'breadboard-back.jpg',
+        'INV003',
+        '120.00',
+        'Circuit World',
+        'INR',
+        '2024-01-25'
+      ],
+      [
+        'Multimeter Digital',
+        'Digital multimeter for measuring voltage, current, and resistance',
+        'Range: DC 0-600V, AC 0-600V, Current: 0-10A, Resistance: 0-20MΩ',
+        '5',
+        'MM001',
+        'Measurement',
+        'Equipment Room',
+        'multimeter-front.jpg',
+        'multimeter-back.jpg',
+        'INV004',
+        '1200.00',
+        'Instrument Supply Co',
+        'INR',
+        '2024-02-01'
+      ],
+      [
+        'Resistor Kit 1/4W',
+        'Assorted carbon film resistors kit',
+        'Values: 10Ω to 1MΩ, Tolerance: ±5%, Power: 1/4W, Quantity: 600 pieces',
+        '3',
+        'RES001',
+        'Electrical',
+        'Storage Room',
+        'resistor-kit-front.jpg',
+        'resistor-kit-back.jpg',
+        'INV005',
+        '350.00',
+        'Electronic Components Hub',
+        'INR',
+        '2024-02-05'
+      ]
+    ]
+    
+    const csvContent = [headers.join(','), ...sampleData.map(row => row.map(field => `"${field}"`).join(','))].join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.setAttribute('hidden', '')
+    a.setAttribute('href', url)
+    a.setAttribute('download', 'lab-components-sample.csv')
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+  }
+
+  const handleBulkUpload = async () => {
+    if (!bulkUploadFile) return
+    
+    setIsBulkUploading(true)
+    
+    try {
+      const formData = new FormData()
+      formData.append('csv', bulkUploadFile)
+      
+      const response = await fetch('/api/lab-components/bulk-upload', {
+        method: 'POST',
+        headers: {
+          'x-user-id': user?.id || '',
+        },
+        body: formData,
+      })
+      
+      const result = await response.json()
+      
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: `Bulk upload completed! Processed: ${result.processed}, Errors: ${result.errors}`,
+        })
+        
+        if (result.errors > 0) {
+          console.log('Upload errors:', result.error_details)
+        }
+        
+        // Refresh components list
+        fetchComponents()
+        
+        // Close dialog and reset
+        setIsBulkUploadDialogOpen(false)
+        setBulkUploadFile(null)
+      } else {
+        throw new Error(result.error || 'Upload failed')
+      }
+    } catch (error) {
+      console.error('Bulk upload error:', error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to upload CSV",
+        variant: "destructive",
+      })
+    } finally {
+      setIsBulkUploading(false)
+    }
   }
 
   // Bulk upload functions
@@ -757,6 +1165,64 @@ export function ManageLabComponents() {
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
           </Button>
+          <Dialog open={isBulkUploadDialogOpen} onOpenChange={setIsBulkUploadDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline">
+                <Package className="h-4 w-4 mr-2" />
+                Bulk Upload
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Bulk Upload Lab Components</DialogTitle>
+                <DialogDescription>
+                  Upload a CSV file to add multiple lab components at once. 
+                  <br />
+                  <a 
+                    href="#" 
+                    onClick={downloadSampleCSV}
+                    className="text-blue-600 hover:underline mt-2 inline-block"
+                  >
+                    Download sample CSV template
+                  </a>
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="csvFile">CSV File</Label>
+                  <Input
+                    id="csvFile"
+                    type="file"
+                    accept=".csv"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      setBulkUploadFile(file || null)
+                      if (file) {
+                        console.log(`Selected file: ${file.name} (${file.size} bytes)`)
+                      }
+                    }}
+                    className="mt-1"
+                  />
+                  {bulkUploadFile && (
+                    <p className="text-sm text-gray-600 mt-1">
+                      Selected: {bulkUploadFile.name} ({(bulkUploadFile.size / 1024).toFixed(1)} KB)
+                    </p>
+                  )}
+                </div>
+                <div className="flex justify-end space-x-2">
+                  <Button variant="outline" onClick={() => {
+                    setIsBulkUploadDialogOpen(false)
+                    setBulkUploadFile(null)
+                  }}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleBulkUpload} disabled={!bulkUploadFile || isBulkUploading}>
+                    {isBulkUploading ? "Uploading..." : "Upload"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
 
           <Dialog open={isBulkUploadDialogOpen} onOpenChange={(open) => {
             setIsBulkUploadDialogOpen(open)
@@ -846,316 +1312,188 @@ export function ManageLabComponents() {
               <DialogHeader>
                 <DialogTitle>Add New Lab Component</DialogTitle>
               </DialogHeader>
-              <div className="grid gap-y-6 w-full">
-                {/* Basic Details Row 1 – Name & Tag ID */}
-                <div className="grid md:grid-cols-3 gap-4">
-                  {/* Component Name spans 2 columns on md+ */}
-                  <div className="md:col-span-2">
-                    <Label htmlFor="name" className="text-sm font-medium">Component Name *</Label>
-                    <Input
-                      id="name"
-                      value={newComponent.component_name}
-                      onChange={(e) => setNewComponent((prev) => ({ ...prev, component_name: e.target.value }))}
-                      placeholder="Arduino Uno R3"
-                      className={`mt-1 w-full h-9 text-sm ${formErrors.component_name ? 'border-red-500' : ''}`}
-                    />
-                    {formErrors.component_name && (
-                      <p className="text-red-500 text-xs mt-1">{formErrors.component_name}</p>
-                    )}
-                  </div>
 
-                  {/* Tag ID */}
-                  <div>
-                    <Label htmlFor="tagId" className="text-sm font-medium">Tag ID (optional)</Label>
-                    <Input
-                      id="tagId"
-                      value={newComponent.component_tag_id}
-                      onChange={e => setNewComponent((prev) => ({ ...prev, component_tag_id: e.target.value }))}
-                      placeholder="e.g. 123-XYZ"
-                      className="mt-1 w-full h-9 text-sm"
-                    />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 h-[calc(90vh-120px)] overflow-y-auto">
+                {/* Left Column: Basic Info & Images */}
+                <div className="space-y-6 pr-3 pl-3">
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="col-span-2">
+                        <Label htmlFor="name">Component Name *</Label>
+                        <Input id="name" value={newComponent.component_name} onChange={e => setNewComponent(prev => ({ ...prev, component_name: e.target.value }))} className={`mt-1 ${formErrors.component_name ? 'border-red-500' : ''}`} />
+                        {formErrors.component_name && <p className="text-red-500 text-xs mt-1">{formErrors.component_name}</p>}
+                  </div>
+                      <div className="col-span-1">
+                        <Label htmlFor="tagId">Tag ID (optional)</Label>
+                        <Input id="tagId" value={newComponent.component_tag_id} onChange={e => setNewComponent(prev => ({ ...prev, component_tag_id: e.target.value }))} className="mt-1" />
                   </div>
                 </div>
-
-                {/* Basic Details Row 2 – Location, Category, Quantity */}
-                <div className="grid md:grid-cols-3 gap-4">
-                  {/* Location */}
-                  <div>
-                    <Label htmlFor="location" className="text-sm font-medium">Location *</Label>
-                    <Select
-                      open={showAddLocation || undefined}
-                      value={newComponent.component_location}
-                      onValueChange={(value) => {
-                        if (value === '__add_new_location__') {
-                          setShowAddLocation(true)
-                        } else {
-                          setNewComponent((prev) => ({ ...prev, component_location: value }))
-                          setShowAddLocation(false)
-                        }
-                      }}
-                    >
-                      <SelectTrigger className={`mt-1 w-full h-9 text-sm ${formErrors.component_location ? 'border-red-500' : ''}`}> 
-                        <SelectValue placeholder="Select location" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {locationOptions.map((location) => (
-                          <SelectItem key={location} value={location}>
-                            {location}
-                          </SelectItem>
-                        ))}
-                        <SelectItem value="__add_new_location__" className="text-blue-600">+ Add new location…</SelectItem>
-                        {showAddLocation && (
-                          <div className="flex items-center gap-2 px-2 py-2 bg-gray-50 border-t">
+                    <div className="flex gap-3 items-end">
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="location">Location *</Label>
+                          <div className="flex space-x-1">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setShowAddLocation(true)}
+                              className="h-6 w-6 p-0"
+                              title="Add location"
+                              aria-label="Add location"
+                            >
+                              <Plus className="h-3 w-3" />
+                            </Button>
+                            {newComponent.component_location && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setLocationToDelete(newComponent.component_location)
+                                  setIsDeleteLocationDialogOpen(true)
+                                }}
+                                className="h-6 w-6 p-0 text-red-600 hover:text-red-700"
+                                title="Delete location"
+                                aria-label="Delete location"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                        {showAddLocation ? (
+                          <div ref={locationInputRef} className="flex gap-2 mt-1">
                             <Input
+                              placeholder="Enter location (e.g., Lab A, Storage Room)"
                               value={newLocation}
-                              onChange={e => setNewLocation(e.target.value)}
-                              placeholder="Enter new location name"
-                              className="flex-1 h-8 text-sm"
-                              autoFocus
+                              onChange={(e) => setNewLocation(e.target.value)}
+                              className="flex-1"
                             />
                             <Button
+                              type="button"
                               size="sm"
-                              onClick={async () => {
-                                await handleAddLocation();
-                                setShowAddLocation(false);
-                              }}
-                              disabled={isSavingLocation || !newLocation.trim()}
-                              className="px-3"
+                              onClick={handleAddLocation}
+                              disabled={!newLocation.trim() || isSavingLocation}
                             >
                               {isSavingLocation ? "Adding..." : "Add"}
                             </Button>
                           </div>
+                        ) : (
+                          <Select value={newComponent.component_location} onValueChange={value => setNewComponent(prev => ({ ...prev, component_location: value }))}>
+                            <SelectTrigger className={`mt-1 ${formErrors.component_location ? 'border-red-500' : ''}`}><SelectValue placeholder="Select Location
+                            " /></SelectTrigger>
+                            <SelectContent>
+                              {locationOptions.map(location => (
+                                <SelectItem key={location} value={location}>{location}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         )}
-                      </SelectContent>
-                    </Select>
-                    {formErrors.component_location && (
-                      <p className="text-red-500 text-xs mt-1">{formErrors.component_location}</p>
-                    )}
-                  </div>
-
-                  {/* Category */}
-                  <div>
-                    <Label htmlFor="category" className="text-sm font-medium">Category *</Label>
-                    <Select
-                      open={showAddCategory || undefined}
-                      value={newComponent.component_category}
-                      onValueChange={(value) => {
-                        if (value === '__add_new__') {
-                          setShowAddCategory(true)
-                        } else {
-                          setNewComponent((prev) => ({ ...prev, component_category: value }))
-                          setShowAddCategory(false)
-                        }
-                      }}
-                    >
-                      <SelectTrigger className={`mt-1 w-full h-9 text-sm ${formErrors.component_category ? 'border-red-500' : ''}`}> 
-                        <SelectValue placeholder="Select category" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {categoryOptions.map((category) => (
-                          <SelectItem key={category} value={category}>
-                            {category}
-                          </SelectItem>
-                        ))}
-                        <SelectItem value="__add_new__" className="text-blue-600">+ Add new category…</SelectItem>
-                        {showAddCategory && (
-                          <div className="flex items-center gap-2 px-2 py-2 bg-gray-50 border-t">
+                        {formErrors.component_location && <p className="text-red-500 text-xs mt-1">{formErrors.component_location}</p>}
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="category">Category *</Label>
+                          <div className="flex space-x-1">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setShowAddCategory(true)}
+                              className="h-6 w-6 p-0"
+                              title="Add category"
+                              aria-label="Add category"
+                            >
+                              <Plus className="h-3 w-3" />
+                            </Button>
+                            {newComponent.component_category && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setCategoryToDelete(newComponent.component_category)
+                                  setIsDeleteCategoryDialogOpen(true)
+                                }}
+                                className="h-6 w-6 p-0 text-red-600 hover:text-red-700"
+                                title="Delete category"
+                                aria-label="Delete category"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                        {showAddCategory ? (
+                          <div ref={categoryInputRef} className="flex gap-2 mt-1">
                             <Input
+                              placeholder="Enter category (e.g., Electrical, Mechanical)"
                               value={newCategory}
-                              onChange={e => setNewCategory(e.target.value)}
-                              placeholder="Enter new category name"
-                              className="flex-1 h-8 text-sm"
-                              autoFocus
+                              onChange={(e) => setNewCategory(e.target.value)}
+                              className="flex-1"
                             />
                             <Button
+                              type="button"
                               size="sm"
-                              onClick={async () => {
-                                await handleAddCategory();
-                                setShowAddCategory(false);
-                              }}
-                              disabled={isSavingCategory || !newCategory.trim()}
-                              className="px-3"
+                              onClick={handleAddCategory}
+                              disabled={!newCategory.trim() || isSavingCategory}
                             >
                               {isSavingCategory ? "Adding..." : "Add"}
                             </Button>
                           </div>
+                        ) : (
+                          <Select value={newComponent.component_category} onValueChange={value => setNewComponent(prev => ({ ...prev, component_category: value }))}>
+                            <SelectTrigger className={`mt-1 ${formErrors.component_category ? 'border-red-500' : ''}`}><SelectValue placeholder="Select category" /></SelectTrigger>
+                            <SelectContent>
+                              {categoryOptions.map(category => (
+                                <SelectItem key={category} value={category}>{category}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         )}
-                      </SelectContent>
-                    </Select>
-                    {formErrors.component_category && (
-                      <p className="text-red-500 text-xs mt-1">{formErrors.component_category}</p>
-                    )}
-                  </div>
-
-                  {/* Quantity */}
-                  <div>
-                    <Label htmlFor="quantity" className="text-sm font-medium">Quantity *</Label>
-                    <Input
-                      id="quantity"
-                      type="number"
-                      value={newComponent.component_quantity}
-                      onChange={(e) => setNewComponent((prev) => ({ ...prev, component_quantity: Number.parseInt(e.target.value) }))}
-                      min="1"
-                      className={`mt-1 w-full h-9 text-sm ${formErrors.component_quantity ? 'border-red-500' : ''}`}
-                    />
-                    {formErrors.component_quantity && (
-                      <p className="text-red-500 text-xs mt-1">{formErrors.component_quantity}</p>
-                    )}
-                  </div>
+                        {formErrors.component_category && <p className="text-red-500 text-xs mt-1">{formErrors.component_category}</p>}
+                      </div>
+                      <div className="w-20">
+                        <Label htmlFor="quantity">Quantity *</Label>
+                        <Input id="quantity" type="number" value={newComponent.component_quantity} onChange={e => setNewComponent(prev => ({ ...prev, component_quantity: Number.parseInt(e.target.value) }))} min="1" className={`mt-1 ${formErrors.component_quantity ? 'border-red-500' : ''}`} />
+                        {formErrors.component_quantity && <p className="text-red-500 text-xs mt-1">{formErrors.component_quantity}</p>}
                 </div>
-                {/* Basic Details Row - Location, Tag ID, Category */}
-                <div className="hidden">
-                  <div className="flex-1 min-w-[180px] md:min-w-[220px]">
-                    <Label htmlFor="location" className="text-sm font-medium">Location *</Label>
-                    <Select
-                      open={showAddLocation || undefined}
-                      value={newComponent.component_location}
-                      onValueChange={(value) => {
-                        if (value === '__add_new_location__') {
-                          setShowAddLocation(true)
-                        } else {
-                          setNewComponent((prev) => ({ ...prev, component_location: value }))
-                          setShowAddLocation(false)
-                        }
-                      }}
-                    >
-                      <SelectTrigger className={`mt-1 ${formErrors.component_location ? 'border-red-500' : ''}`}>
-                        <SelectValue placeholder="Select location" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {locationOptions.map((location) => (
-                          <SelectItem key={location} value={location}>
-                            {location}
-                          </SelectItem>
-                        ))}
-                        <SelectItem value="__add_new_location__" className="text-blue-600">+ Add new location…</SelectItem>
-                        {showAddLocation && (
-                          <div className="flex items-center gap-2 px-2 py-2 bg-gray-50 border-t">
-                            <Input
-                              value={newLocation}
-                              onChange={e => setNewLocation(e.target.value)}
-                              placeholder="Enter new location name"
-                              className="flex-1 h-8 text-sm"
-                              autoFocus
-                            />
-                            <Button
-                              size="sm"
-                              onClick={async () => {
-                                await handleAddLocation();
-                                setShowAddLocation(false);
-                              }}
-                              disabled={isSavingLocation || !newLocation.trim()}
-                              className="px-3"
-                            >
-                              {isSavingLocation ? "Adding..." : "Add"}
-                            </Button>
-                          </div>
-                        )}
-                      </SelectContent>
-                    </Select>
-                    {formErrors.component_location && (
-                      <p className="text-red-500 text-xs mt-1">{formErrors.component_location}</p>
-                    )}
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-[180px] md:min-w-[220px]">
-                    <Label htmlFor="tagId" className="text-sm font-medium">Tag ID (optional)</Label>
-                    <Input
-                      id="tagId"
-                      value={newComponent.component_tag_id}
-                      onChange={e => setNewComponent((prev) => ({ ...prev, component_tag_id: e.target.value }))}
-                      placeholder="e.g. 123-XYZ"
-                      className="mt-1 w-full h-9 text-sm"
-                    />
-                  </div>
-                  <div className="flex-1 min-w-[180px] md:min-w-[220px]">
-                    <Label htmlFor="category" className="text-sm font-medium">Category *</Label>
-                    <Select
-                      open={showAddCategory || undefined}
-                      value={newComponent.component_category}
-                      onValueChange={(value) => {
-                        if (value === '__add_new__') {
-                          setShowAddCategory(true)
-                        } else {
-                          setNewComponent((prev) => ({ ...prev, component_category: value }))
-                          setShowAddCategory(false)
-                        }
-                      }}
-                    >
-                      <SelectTrigger className={`mt-1 ${formErrors.component_category ? 'border-red-500' : ''}`}>
-                        <SelectValue placeholder="Select category" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {categoryOptions.map((category) => (
-                          <SelectItem key={category} value={category}>
-                            {category}
-                          </SelectItem>
-                        ))}
-                        <SelectItem value="__add_new__" className="text-blue-600">+ Add new category…</SelectItem>
-                        {showAddCategory && (
-                          <div className="flex items-center gap-2 px-2 py-2 bg-gray-50 border-t">
-                            <Input
-                              value={newCategory}
-                              onChange={e => setNewCategory(e.target.value)}
-                              placeholder="Enter new category name"
-                              className="flex-1 h-8 text-sm"
-                              autoFocus
-                            />
-                            <Button
-                              size="sm"
-                              onClick={async () => {
-                                await handleAddCategory();
-                                setShowAddCategory(false);
-                              }}
-                              disabled={isSavingCategory || !newCategory.trim()}
-                              className="px-3"
-                            >
-                              {isSavingCategory ? "Adding..." : "Add"}
-                            </Button>
-                          </div>
-                        )}
-                      </SelectContent>
-                    </Select>
-                    {formErrors.component_category && (
-                      <p className="text-red-500 text-xs mt-1">{formErrors.component_category}</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Image Upload Section with Gen Button */}
-                <div className="space-y-4">
+                  <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-medium text-gray-900">Component Images</h3>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      type="button"
-                      className="h-8"
-                    >
-                      gen
+                      <h3 className="text-lg font-medium text-gray-900 border-b pb-2">Component Images</h3>
+                      <Button variant="outline" size="sm" type="button" className="h-8">
+                        <img src="/genAI_icon.png" alt="GenAI" className="h-7 w-7" />
                     </Button>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-3">
-                      <Label htmlFor="frontImage" className="text-sm font-medium">Front Image *</Label>
-                      <div className={`border-2 border-dashed rounded-lg h-10 p-1 flex items-center hover:border-gray-400 transition-colors ${formErrors.frontImage ? 'border-red-500' : 'border-gray-300'}`}> 
-                        <Input
-                          id="frontImage"
-                          type="file"
-                          accept="image/*"
-                          onChange={e => setFrontImageFile(e.target.files?.[0] || null)}
-                          className="border-0 p-0 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                        />
-                      </div>
-                      {formErrors.frontImage && (
-                        <p className="text-red-500 text-xs">{formErrors.frontImage}</p>
-                      )}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="frontImage">Front Image *</Label>
+                        <Input id="frontImage" type="file" accept="image/*" onChange={e => setFrontImageFile(e.target.files?.[0] || null)} className={`mt-1 ${formErrors.frontImage ? 'border-red-500' : ''}`} />
+                        {formErrors.frontImage && <p className="text-red-500 text-xs mt-1">{formErrors.frontImage}</p>}
                       {frontImagePreview && (
                         <div className="mt-2">
-                          <Label className="text-xs font-medium text-gray-600">Preview:</Label>
                           <img
                             src={frontImagePreview}
                             alt="Front Preview"
-                            className="mt-1 w-full h-64 object-contain rounded-lg bg-gray-50"
+                              className="w-full h-40 object-contain rounded-lg bg-gray-50"
+                          />
+                        </div>
+                      )}
+                    </div>
+                      <div>
+                        <Label htmlFor="backImage">Back Image *</Label>
+                        <Input id="backImage" type="file" accept="image/*" onChange={e => setBackImageFile(e.target.files?.[0] || null)} className={`mt-1 ${formErrors.backImage ? 'border-red-500' : ''}`} />
+                        {formErrors.backImage && <p className="text-red-500 text-xs mt-1">{formErrors.backImage}</p>}
+                      {backImagePreview && (
+                        <div className="mt-2">
+                          <img
+                            src={backImagePreview}
+                            alt="Back Preview"
+                              className="w-full h-40 object-contain rounded-lg bg-gray-50"
+
                           />
                         </div>
                       )}
@@ -1217,77 +1555,50 @@ export function ManageLabComponents() {
                   </div>
                 </div>
 
-                {/* Purchase Details Section */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-medium text-gray-900">Purchase Details (Optional)</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                </div>
+                {/* Right Column: Details & Purchase Info */}
+                <div className="space-y-6 pr-2">
+                  <div className="space-y-3">
+                  <div>
+                      <Label htmlFor="description">Description *</Label>
+                      <Textarea id="description" value={newComponent.component_description} onChange={e => setNewComponent(prev => ({ ...prev, component_description: e.target.value }))} rows={3} className={`mt-1 ${formErrors.component_description ? 'border-red-500' : ''}`} />
+                      {formErrors.component_description && <p className="text-red-500 text-xs mt-1">{formErrors.component_description}</p>}
+                  </div>
+                  <div>
+                      <Label htmlFor="specifications">Specifications</Label>
+                      <Textarea id="specifications" value={newComponent.component_specification} onChange={e => setNewComponent(prev => ({ ...prev, component_specification: e.target.value }))} rows={3} className="mt-1" />
+                  </div>
+                </div>
+                  <div className="space-y-3">
+                    <h3 className="text-lg font-medium text-gray-900 border-b pb-2">Purchase Details (Optional)</h3>
+                    <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor="invoiceNumber" className="text-sm font-medium">Invoice Number</Label>
-                      <Input
-                        id="invoiceNumber"
-                        value={newComponent.invoice_number}
-                        onChange={(e) => setNewComponent((prev) => ({ ...prev, invoice_number: e.target.value }))}
-                        placeholder="INV-2025-001"
-                        className={`mt-1 ${formErrors.invoice_number ? 'border-red-500' : ''}`}
-                      />
-                      {formErrors.invoice_number && (
-                        <p className="text-red-500 text-xs mt-1">{formErrors.invoice_number}</p>
-                      )}
+                        <Label htmlFor="invoiceNumber">Invoice Number</Label>
+                        <Input id="invoiceNumber" value={newComponent.invoice_number} onChange={e => setNewComponent(prev => ({ ...prev, invoice_number: e.target.value }))} className={`mt-1 ${formErrors.invoice_number ? 'border-red-500' : ''}`} />
+                        {formErrors.invoice_number && <p className="text-red-500 text-xs mt-1">{formErrors.invoice_number}</p>}
                     </div>
                     <div>
-                      <Label htmlFor="purchasedFrom" className="text-sm font-medium">Purchased From</Label>
-                      <Input
-                        id="purchasedFrom"
-                        value={newComponent.purchased_from}
-                        onChange={(e) => setNewComponent((prev) => ({ ...prev, purchased_from: e.target.value }))}
-                        placeholder="Vendor/Supplier Name"
-                        className={`mt-1 ${formErrors.purchased_from ? 'border-red-500' : ''}`}
-                      />
-                      {formErrors.purchased_from && (
-                        <p className="text-red-500 text-xs mt-1">{formErrors.purchased_from}</p>
-                      )}
+                        <Label htmlFor="purchasedFrom">Purchased From</Label>
+                        <Input id="purchasedFrom" value={newComponent.purchased_from} onChange={e => setNewComponent(prev => ({ ...prev, purchased_from: e.target.value }))} className={`mt-1 ${formErrors.purchased_from ? 'border-red-500' : ''}`} />
+                        {formErrors.purchased_from && <p className="text-red-500 text-xs mt-1">{formErrors.purchased_from}</p>}
                     </div>
                   </div>
+                    <div className="grid grid-cols-3 gap-4">
+                    <div>
+                        <Label htmlFor="purchasedDate">Purchase Date</Label>
+                        <Input id="purchasedDate" type="date" value={newComponent.purchase_date} onChange={e => setNewComponent(prev => ({ ...prev, purchase_date: e.target.value }))} className={`mt-1 ${formErrors.purchase_date ? 'border-red-500' : ''}`} />
+                        {formErrors.purchase_date && <p className="text-red-500 text-xs mt-1">{formErrors.purchase_date}</p>}
+                    </div>
+                    <div>
+                        <Label htmlFor="purchasedValue">Purchase Value</Label>
+                        <Input id="purchasedValue" type="number" min="0" step="0.01" value={newComponent.purchase_value} onChange={e => setNewComponent(prev => ({ ...prev, purchase_value: e.target.value }))} placeholder="0.00" className={`mt-1 ${formErrors.purchase_value ? 'border-red-500' : ''}`} />
+                        {formErrors.purchase_value && <p className="text-red-500 text-xs mt-1">{formErrors.purchase_value}</p>}
+                    </div>
+                    <div>
+                        <Label htmlFor="purchasedCurrency">Currency</Label>
+                        <Select value={newComponent.purchase_currency} onValueChange={value => setNewComponent(prev => ({ ...prev, purchase_currency: value }))}>
+                          <SelectTrigger className={`mt-1 ${formErrors.purchase_currency ? 'border-red-500' : ''}`}><SelectValue placeholder="Select currency" /></SelectTrigger>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <Label htmlFor="purchasedDate" className="text-sm font-medium">Purchase Date</Label>
-                      <Input
-                        id="purchasedDate"
-                        type="date"
-                        value={newComponent.purchase_date}
-                        onChange={(e) => setNewComponent((prev) => ({ ...prev, purchase_date: e.target.value }))}
-                        className={`mt-1 ${formErrors.purchase_date ? 'border-red-500' : ''}`}
-                      />
-                      {formErrors.purchase_date && (
-                        <p className="text-red-500 text-xs mt-1">{formErrors.purchase_date}</p>
-                      )}
-                    </div>
-                    <div>
-                      <Label htmlFor="purchasedValue" className="text-sm font-medium">Purchase Value</Label>
-                      <Input
-                        id="purchasedValue"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={newComponent.purchase_value}
-                        onChange={(e) => setNewComponent((prev) => ({ ...prev, purchase_value: e.target.value }))}
-                        placeholder="0.00"
-                        className={`mt-1 ${formErrors.purchase_value ? 'border-red-500' : ''}`}
-                      />
-                      {formErrors.purchase_value && (
-                        <p className="text-red-500 text-xs mt-1">{formErrors.purchase_value}</p>
-                      )}
-                    </div>
-                    <div>
-                      <Label htmlFor="purchasedCurrency" className="text-sm font-medium">Currency</Label>
-                      <Select
-                        value={newComponent.purchase_currency}
-                        onValueChange={(value) => setNewComponent((prev) => ({ ...prev, purchase_currency: value }))}
-                      >
-                        <SelectTrigger className={`mt-1 ${formErrors.purchase_currency ? 'border-red-500' : ''}`}>
-                          <SelectValue placeholder="Select currency" />
-                        </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="INR">INR - Indian Rupee</SelectItem>
                           <SelectItem value="USD">USD - US Dollar</SelectItem>
@@ -1295,11 +1606,11 @@ export function ManageLabComponents() {
                           <SelectItem value="GBP">GBP - British Pound</SelectItem>
                         </SelectContent>
                       </Select>
-                      {formErrors.purchase_currency && (
-                        <p className="text-red-500 text-xs mt-1">{formErrors.purchase_currency}</p>
-                      )}
+
+                        {formErrors.purchase_currency && <p className="text-red-500 text-xs mt-1">{formErrors.purchase_currency}</p>}
                     </div>
                   </div>
+                </div>
                 </div>
 
                 {/* Form Actions */}
@@ -1315,12 +1626,22 @@ export function ManageLabComponents() {
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <span tabIndex={0}>
-                          <Button onClick={handleAddComponent} disabled={!isAddFormValid()}>
-                            Add Component
+
+                          <Button 
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              handleAddComponent()
+                            }} 
+                            disabled={!isAddFormValid || isSubmitting}
+                          >
+                            {isSubmitting ? "Adding..." : "Add Component"}
+
                           </Button>
                         </span>
                       </TooltipTrigger>
-                      {!isAddFormValid() && (
+                      {!isAddFormValid && (
                         <TooltipContent>
                           <p>Please fill in all required fields: Component Name, Description, Category, Location, Quantity, Front Image, and Back Image.</p>
                         </TooltipContent>
@@ -2006,6 +2327,94 @@ export function ManageLabComponents() {
                   }}
                 >
                   Close
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Category Confirmation Dialog */}
+      <Dialog open={isDeleteCategoryDialogOpen} onOpenChange={setIsDeleteCategoryDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-red-600" />
+              Delete Category
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this category? This action cannot be undone if the category is not being used by any components.
+            </DialogDescription>
+          </DialogHeader>
+          {categoryToDelete && (
+            <div className="space-y-4">
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="font-medium">Category: {categoryToDelete}</p>
+                <p className="text-sm text-gray-600 mt-1">
+                  This will remove the category from the available options. Components currently using this category will not be affected.
+                </p>
+              </div>
+              
+              <div className="flex justify-end space-x-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsDeleteCategoryDialogOpen(false)
+                    setCategoryToDelete(null)
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => categoryToDelete && handleDeleteCategory(categoryToDelete)}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Category
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Location Confirmation Dialog */}
+      <Dialog open={isDeleteLocationDialogOpen} onOpenChange={setIsDeleteLocationDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-red-600" />
+              Delete Location
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this location? This action cannot be undone if the location is not being used by any components.
+            </DialogDescription>
+          </DialogHeader>
+          {locationToDelete && (
+            <div className="space-y-4">
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="font-medium">Location: {locationToDelete}</p>
+                <p className="text-sm text-gray-600 mt-1">
+                  This will remove the location from the available options. Components currently using this location will not be affected.
+                </p>
+              </div>
+              
+              <div className="flex justify-end space-x-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsDeleteLocationDialogOpen(false)
+                    setLocationToDelete(null)
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => locationToDelete && handleDeleteLocation(locationToDelete)}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Location
                 </Button>
               </div>
             </div>

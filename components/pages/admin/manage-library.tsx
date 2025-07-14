@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -47,8 +47,6 @@ interface LibraryItem {
   imageUrl?: string | null
   backImageUrl?: string | null
   availableQuantity?: number
-  faculty_id?: string
-  facultyName?: string
 }
 
 // Utility functions for formatting
@@ -96,7 +94,6 @@ export function ManageLibrary() {
     purchase_date: "",
     purchase_value: "",
     purchase_currency: "INR",
-    faculty_id: "",
   })
 
   const [frontImageFile, setFrontImageFile] = useState<File | null>(null)
@@ -108,20 +105,31 @@ export function ManageLibrary() {
   const [newCategory, setNewCategory] = useState("")
   const [isSavingCategory, setIsSavingCategory] = useState(false)
   const [showAddCategory, setShowAddCategory] = useState(false)
+  const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null)
+  const [isDeleteCategoryDialogOpen, setIsDeleteCategoryDialogOpen] = useState(false)
   const [showAddLocation, setShowAddLocation] = useState(false)
   const [newLocation, setNewLocation] = useState("")
   const [isSavingLocation, setIsSavingLocation] = useState(false)
-  const [locationOptions, setLocationOptions] = useState<string[]>(["Library A", "Library B", "Reading Room", "Storage Room"])
+  const [locationToDelete, setLocationToDelete] = useState<string | null>(null)
+  const [isDeleteLocationDialogOpen, setIsDeleteLocationDialogOpen] = useState(false)
+  const [locationOptions, setLocationOptions] = useState<string[]>([])
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<LibraryItem | null>(null)
   const [imageStates, setImageStates] = useState<Record<string, boolean>>({}) // false = front, true = back
 
   // Add form validation state
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Bulk upload state
+  const [isBulkUploadDialogOpen, setIsBulkUploadDialogOpen] = useState(false)
+  const [bulkUploadFile, setBulkUploadFile] = useState<File | null>(null)
+  const [isBulkUploading, setIsBulkUploading] = useState(false)
 
   useEffect(() => {
     fetchItems()
     fetchCategories()
+    fetchLocations()
     fetchFaculty()
   }, [])
 
@@ -132,6 +140,68 @@ export function ManageLibrary() {
     console.log("ManageLibrary - User name:", user?.name)
     console.log("ManageLibrary - User role:", user?.role)
   }, [user])
+
+  // Refs for click-outside detection
+  const locationInputRef = useRef<HTMLDivElement>(null)
+  const categoryInputRef = useRef<HTMLDivElement>(null)
+
+  // Click-outside detection for location input
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        showAddLocation &&
+        locationInputRef.current &&
+        !locationInputRef.current.contains(event.target as Node)
+      ) {
+        setShowAddLocation(false)
+        setNewLocation("")
+      }
+    }
+
+    const handleEscapeKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && showAddLocation) {
+        setShowAddLocation(false)
+        setNewLocation("")
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside)
+    document.addEventListener("keydown", handleEscapeKey)
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside)
+      document.removeEventListener("keydown", handleEscapeKey)
+    }
+  }, [showAddLocation])
+
+  // Click-outside detection for category input
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        showAddCategory &&
+        categoryInputRef.current &&
+        !categoryInputRef.current.contains(event.target as Node)
+      ) {
+        setShowAddCategory(false)
+        setNewCategory("")
+      }
+    }
+
+    const handleEscapeKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && showAddCategory) {
+        setShowAddCategory(false)
+        setNewCategory("")
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside)
+    document.addEventListener("keydown", handleEscapeKey)
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside)
+      document.removeEventListener("keydown", handleEscapeKey)
+    }
+  }, [showAddCategory])
 
   const fetchItems = async () => {
     try {
@@ -192,6 +262,20 @@ export function ManageLibrary() {
     }
   };
 
+  const fetchLocations = async () => {
+    try {
+      const res = await fetch("/api/library-items/locations");
+      if (res.ok) {
+        const data = await res.json();
+        setLocationOptions(data.locations || []);
+      }
+    } catch (e) {
+      console.error("Error fetching locations:", e);
+      // Set default locations as fallback
+      setLocationOptions(["Library A", "Library B", "Reading Room", "Storage Room"]);
+    }
+  };
+
   const filteredItems = items.filter(
     (item) =>
       (item.item_name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
@@ -200,8 +284,18 @@ export function ManageLibrary() {
   )
 
   const handleAddItem = async () => {
+    // Prevent multiple submissions
+    if (isSubmitting) {
+      console.log('Already submitting, ignoring click')
+      return
+    }
+    
+    setIsSubmitting(true)
+    console.log('Starting library item submission...')
+    
+    try {
     // Validate form before proceeding
-    if (!validateForm()) {
+      if (!isAddFormValid()) {
       toast({
         title: "Validation Error",
         description: "Please fill in all required fields correctly",
@@ -237,7 +331,6 @@ export function ManageLibrary() {
           description: "The quantity has been added to the existing item.",
         })
         // Reset form
-        resetForm()
         setIsAddDialogOpen(false)
         return
       }
@@ -292,7 +385,6 @@ export function ManageLibrary() {
     const formattedCategory = toTitleCase(newItem.item_category)
     const formattedLocation = formatLocation(newItem.item_location)
 
-    try {
       const response = await fetch("/api/library-items", {
         method: "POST",
         headers: {
@@ -314,7 +406,6 @@ export function ManageLibrary() {
         setItems((prev) => [...prev, data.item])
         
         // Reset form
-        resetForm()
         setIsAddDialogOpen(false)
 
         toast({
@@ -332,6 +423,9 @@ export function ManageLibrary() {
         description: error instanceof Error ? error.message : "Failed to add item",
         variant: "destructive",
       })
+    } finally {
+      setIsSubmitting(false)
+      console.log('Library item submission finished')
     }
   }
 
@@ -349,44 +443,279 @@ export function ManageLibrary() {
       purchase_date: "",
       purchase_value: "",
       purchase_currency: "INR",
-      faculty_id: "",
     })
     setFrontImageFile(null)
     setBackImageFile(null)
     setFrontImagePreview(null)
     setBackImagePreview(null)
-    setCategoryOptions(["General"])
     setNewCategory("")
     setIsSavingCategory(false)
     setShowAddCategory(false)
+    setCategoryToDelete(null)
+    setIsDeleteCategoryDialogOpen(false)
     setShowAddLocation(false)
     setNewLocation("")
     setIsSavingLocation(false)
-    setLocationOptions(["Library A", "Library B", "Reading Room", "Storage Room"])
+    setLocationToDelete(null)
+    setIsDeleteLocationDialogOpen(false)
     setIsEditDialogOpen(false)
     setEditingItem(null)
     setImageStates({})
     setFormErrors({})
+    setIsSubmitting(false)
+  }
+
+  // Bulk upload functions
+  const downloadSampleCSV = (e: React.MouseEvent) => {
+    e.preventDefault()
+    const headers = [
+      'item_name',
+      'item_description', 
+      'item_specification',
+      'item_quantity',
+      'item_tag_id',
+      'item_category',
+      'item_location',
+      'front_image_id',
+      'back_image_id',
+      'invoice_number',
+      'purchase_value',
+      'purchased_from',
+      'purchase_currency',
+      'purchase_date'
+    ]
+    
+    const sampleData = [
+      [
+        'Introduction to Computer Science',
+        'A comprehensive guide to computer science fundamentals covering algorithms and programming',
+        'Pages: 500, Edition: 5th, Publisher: Tech Books, ISBN: 978-0123456789',
+        '5',
+        'LIB001',
+        'Computer Science',
+        'Library A',
+        'book-cs-front.jpg',
+        'book-cs-back.jpg',
+        'INV001',
+        '1200.00',
+        'Academic Publishers',
+        'INR',
+        '2024-01-15'
+      ],
+      [
+        'Data Structures and Algorithms',
+        'Advanced concepts in data structures with algorithmic problem solving techniques',
+        'Pages: 680, Edition: 4th, Publisher: Algorithm Press, ISBN: 978-0987654321',
+        '8',
+        'LIB002',
+        'Computer Science',
+        'Library A',
+        'book-dsa-front.jpg',
+        'book-dsa-back.jpg',
+        'INV002',
+        '1500.00',
+        'Educational Books Ltd',
+        'INR',
+        '2024-01-20'
+      ],
+      [
+        'Digital Electronics',
+        'Comprehensive guide to digital circuits, logic design, and microprocessors',
+        'Pages: 520, Edition: 2nd, Publisher: Circuit Books, ISBN: 978-0456789123',
+        '6',
+        'LIB003',
+        'Electronics',
+        'Library B',
+        'book-digital-front.jpg',
+        'book-digital-back.jpg',
+        'INV003',
+        '980.00',
+        'Engineering Publishers',
+        'INR',
+        '2024-01-25'
+      ],
+      [
+        'Machine Learning Fundamentals',
+        'Introduction to ML algorithms, neural networks, and deep learning concepts',
+        'Pages: 720, Edition: 1st, Publisher: AI Books, ISBN: 978-0234567891',
+        '4',
+        'LIB004',
+        'Artificial Intelligence',
+        'Library A',
+        'book-ml-front.jpg',
+        'book-ml-back.jpg',
+        'INV004',
+        '2200.00',
+        'Tech Knowledge Publishers',
+        'INR',
+        '2024-02-01'
+      ],
+      [
+        'Computer Networks',
+        'Networking protocols, architecture, security, and network programming',
+        'Pages: 640, Edition: 5th, Publisher: Network Press, ISBN: 978-0345678912',
+        '7',
+        'LIB005',
+        'Networking',
+        'Library B',
+        'book-network-front.jpg',
+        'book-network-back.jpg',
+        'INV005',
+        '1350.00',
+        'Technical Books Inc',
+        'INR',
+        '2024-02-05'
+      ],
+      [
+        'Database Management Systems',
+        'SQL, NoSQL, database design principles, and optimization techniques',
+        'Pages: 580, Edition: 3rd, Publisher: Data Books, ISBN: 978-0567891234',
+        '6',
+        'LIB006',
+        'Database',
+        'Library A',
+        'book-db-front.jpg',
+        'book-db-back.jpg',
+        'INV006',
+        '1180.00',
+        'Information Systems Publishers',
+        'INR',
+        '2024-02-10'
+      ],
+      [
+        'Software Engineering',
+        'Software development lifecycle, design patterns, and project management',
+        'Pages: 620, Edition: 6th, Publisher: Software Press, ISBN: 978-0678912345',
+        '5',
+        'LIB007',
+        'Software Engineering',
+        'Library A',
+        'book-se-front.jpg',
+        'book-se-back.jpg',
+        'INV007',
+        '1650.00',
+        'Professional Books Corp',
+        'INR',
+        '2024-02-15'
+      ]
+    ]
+    
+    const csvContent = [headers.join(','), ...sampleData.map(row => row.map(field => `"${field}"`).join(','))].join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.setAttribute('hidden', '')
+    a.setAttribute('href', url)
+    a.setAttribute('download', 'library-items-sample.csv')
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+  }
+
+  const handleBulkUpload = async () => {
+    if (!bulkUploadFile) return
+    
+    setIsBulkUploading(true)
+    
+    try {
+      const formData = new FormData()
+      formData.append('csv', bulkUploadFile)
+      
+      const response = await fetch('/api/library-items/bulk-upload', {
+        method: 'POST',
+        headers: {
+          'x-user-id': user?.id || '',
+        },
+        body: formData,
+      })
+      
+      const result = await response.json()
+      
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: `Bulk upload completed! Processed: ${result.processed}, Errors: ${result.errors}`,
+        })
+        
+        if (result.errors > 0) {
+          console.log('Upload errors:', result.error_details)
+        }
+        
+        // Refresh items list
+        fetchItems()
+        
+        // Close dialog and reset
+        setIsBulkUploadDialogOpen(false)
+        setBulkUploadFile(null)
+      } else {
+        throw new Error(result.error || 'Upload failed')
+      }
+    } catch (error) {
+      console.error('Bulk upload error:', error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to upload CSV",
+        variant: "destructive",
+      })
+    } finally {
+      setIsBulkUploading(false)
+    }
   }
 
   const validateForm = () => {
     const errors: Record<string, string> = {}
 
-    if (!newItem.item_name) errors.item_name = "Item name is required"
-    if (!newItem.item_category) errors.item_category = "Item category is required"
-    if (!newItem.item_location) errors.item_location = "Item location is required"
-    if (!newItem.item_quantity) errors.item_quantity = "Item quantity is required"
-    if (!newItem.item_specification) errors.item_specification = "Item specification is required"
-    if (!newItem.item_tag_id) errors.item_tag_id = "Item tag ID is required"
-    if (!newItem.invoice_number) errors.invoice_number = "Invoice number is required"
-    if (!newItem.purchase_value) errors.purchase_value = "Purchase value is required"
-    if (!newItem.purchase_currency) errors.purchase_currency = "Purchase currency is required"
-    if (!newItem.purchase_date) errors.purchase_date = "Purchase date is required"
-    if (!newItem.purchased_from) errors.purchased_from = "Purchased from is required"
-    if (!newItem.faculty_id) errors.faculty_id = "Faculty is required"
+    // Required fields validation
+    if (!newItem.item_name?.trim()) {
+      errors.item_name = "Book name is required"
+    }
 
-  setFormErrors(errors)
-  return Object.keys(errors).length === 0
+    if (!newItem.item_description?.trim()) {
+      errors.item_description = "Description is required"
+    }
+
+    if (!newItem.item_category?.trim()) {
+      errors.item_category = "Category is required"
+    }
+
+    if (!newItem.item_location?.trim()) {
+      errors.item_location = "Location is required"
+    }
+
+    if (newItem.item_quantity <= 0) {
+      errors.item_quantity = "Quantity must be greater than 0"
+    }
+
+
+
+    if (!frontImageFile) {
+      errors.frontImage = "Front image is required"
+    }
+
+    if (!backImageFile) {
+      errors.backImage = "Back image is required"
+    }
+
+    // Purchase details validation (optional but if one is filled, others should be too)
+    const hasPurchaseDetails = newItem.invoice_number || newItem.purchased_from || newItem.purchase_date || newItem.purchase_value
+    if (hasPurchaseDetails) {
+      if (!newItem.invoice_number?.trim()) {
+        errors.invoice_number = "Invoice number is required when providing purchase details"
+      }
+      if (!newItem.purchased_from?.trim()) {
+        errors.purchased_from = "Purchased from is required when providing purchase details"
+      }
+      if (!newItem.purchase_date) {
+        errors.purchase_date = "Purchase date is required when providing purchase details"
+      }
+      if (!newItem.purchase_value) {
+        errors.purchase_value = "Purchase value is required when providing purchase details"
+      }
+    }
+
+    setFormErrors(errors)
+    return Object.keys(errors).length === 0
   }
 
   const handleEditItem = async () => {
@@ -486,13 +815,15 @@ export function ManageLibrary() {
     return (
       (editingItem
         ? editingItem.item_name?.trim() &&
+          editingItem.item_description?.trim() &&
           editingItem.item_category?.trim() &&
           editingItem.item_location?.trim() &&
           editingItem.item_quantity > 0
         : newItem.item_name?.trim() &&
+          newItem.item_description?.trim() &&
           newItem.item_category?.trim() &&
           newItem.item_location?.trim() &&
-          (newItem.item_quantity > 0 && newItem.faculty_id)
+          newItem.item_quantity > 0
       ) &&
       frontImageFile &&
       backImageFile
@@ -530,6 +861,164 @@ export function ManageLibrary() {
     }
   }
 
+  const handleAddCategory = async () => {
+    if (!newCategory.trim()) return
+    setIsSavingCategory(true)
+    try {
+      const res = await fetch("/api/library-items/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category: newCategory.trim() })
+      })
+      
+      if (res.ok) {
+        const data = await res.json()
+        const formattedCategory = data.category
+        setCategoryOptions((prev) => [...prev, formattedCategory])
+        setNewItem((prev) => ({ ...prev, item_category: formattedCategory }))
+        setNewCategory("")
+        setShowAddCategory(false)
+        toast({ title: "Category added!", description: "New category added successfully." })
+      } else {
+        const error = await res.json()
+        toast({ 
+          title: "Error", 
+          description: error.error || "Failed to add category.", 
+          variant: "destructive" 
+        })
+      }
+    } catch (error) {
+      console.error("Error adding category:", error)
+      toast({ 
+        title: "Error", 
+        description: "Failed to add category.", 
+        variant: "destructive" 
+      })
+    } finally {
+      setIsSavingCategory(false)
+    }
+  }
+
+  const handleDeleteCategory = async (category: string) => {
+    try {
+      const res = await fetch(`/api/library-items/categories?category=${encodeURIComponent(category)}`, {
+        method: "DELETE"
+      })
+      
+      if (res.ok) {
+        setCategoryOptions((prev) => prev.filter(cat => cat !== category))
+        toast({ 
+          title: "Category removed!", 
+          description: "Category removed successfully." 
+        })
+      } else {
+        const error = await res.json()
+        if (error.componentsUsing) {
+          toast({ 
+            title: "Cannot delete category", 
+            description: `Category is being used by ${error.count} item(s). Remove items first.`, 
+            variant: "destructive" 
+          })
+        } else {
+          toast({ 
+            title: "Error", 
+            description: error.error || "Failed to delete category.", 
+            variant: "destructive" 
+          })
+        }
+      }
+    } catch (error) {
+      console.error("Error deleting category:", error)
+      toast({ 
+        title: "Error", 
+        description: "Failed to delete category.", 
+        variant: "destructive" 
+      })
+    } finally {
+      setIsDeleteCategoryDialogOpen(false)
+      setCategoryToDelete(null)
+    }
+  }
+
+  const handleAddLocation = async () => {
+    if (!newLocation.trim()) return
+    setIsSavingLocation(true)
+    try {
+      const res = await fetch("/api/library-items/locations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ location: newLocation.trim() })
+      })
+      
+      if (res.ok) {
+        const data = await res.json()
+        const formattedLocation = data.location
+        setLocationOptions((prev) => [...prev, formattedLocation])
+        setNewItem((prev) => ({ ...prev, item_location: formattedLocation }))
+        setNewLocation("")
+        setShowAddLocation(false)
+        toast({ title: "Location added!", description: "New location added successfully." })
+      } else {
+        const error = await res.json()
+        toast({ 
+          title: "Error", 
+          description: error.error || "Failed to add location.", 
+          variant: "destructive" 
+        })
+      }
+    } catch (error) {
+      console.error("Error adding location:", error)
+      toast({ 
+        title: "Error", 
+        description: "Failed to add location.", 
+        variant: "destructive" 
+      })
+    } finally {
+      setIsSavingLocation(false)
+    }
+  }
+
+  const handleDeleteLocation = async (location: string) => {
+    try {
+      const res = await fetch(`/api/library-items/locations?location=${encodeURIComponent(location)}`, {
+        method: "DELETE"
+      })
+      
+      if (res.ok) {
+        setLocationOptions((prev) => prev.filter(loc => loc !== location))
+        toast({ 
+          title: "Location removed!", 
+          description: "Location removed successfully." 
+        })
+      } else {
+        const error = await res.json()
+        if (error.componentsUsing) {
+          toast({ 
+            title: "Cannot delete location", 
+            description: `Location is being used by ${error.count} item(s). Remove items first.`, 
+            variant: "destructive" 
+          })
+        } else {
+          toast({ 
+            title: "Error", 
+            description: error.error || "Failed to delete location.", 
+            variant: "destructive" 
+          })
+        }
+      }
+    } catch (error) {
+      console.error("Error deleting location:", error)
+      toast({ 
+        title: "Error", 
+        description: "Failed to delete location.", 
+        variant: "destructive" 
+      })
+    } finally {
+      setIsDeleteLocationDialogOpen(false)
+      setLocationToDelete(null)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -549,6 +1038,64 @@ export function ManageLibrary() {
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
           </Button>
+          <Dialog open={isBulkUploadDialogOpen} onOpenChange={setIsBulkUploadDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline">
+                <Package className="h-4 w-4 mr-2" />
+                Bulk Upload
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Bulk Upload Library Items</DialogTitle>
+                <DialogDescription>
+                  Upload a CSV file to add multiple library items at once. 
+                  <br />
+                  <a 
+                    href="#" 
+                    onClick={downloadSampleCSV}
+                    className="text-blue-600 hover:underline mt-2 inline-block"
+                  >
+                    Download sample CSV template
+                  </a>
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="csvFile">CSV File</Label>
+                  <Input
+                    id="csvFile"
+                    type="file"
+                    accept=".csv"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      setBulkUploadFile(file || null)
+                      if (file) {
+                        console.log(`Selected file: ${file.name} (${file.size} bytes)`)
+                      }
+                    }}
+                    className="mt-1"
+                  />
+                  {bulkUploadFile && (
+                    <p className="text-sm text-gray-600 mt-1">
+                      Selected: {bulkUploadFile.name} ({(bulkUploadFile.size / 1024).toFixed(1)} KB)
+                    </p>
+                  )}
+                </div>
+                <div className="flex justify-end space-x-2">
+                  <Button variant="outline" onClick={() => {
+                    setIsBulkUploadDialogOpen(false)
+                    setBulkUploadFile(null)
+                  }}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleBulkUpload} disabled={!bulkUploadFile || isBulkUploading}>
+                    {isBulkUploading ? "Uploading..." : "Upload"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
           <Dialog open={isAddDialogOpen} onOpenChange={(open) => {
             setIsAddDialogOpen(open)
             if (!open) {
@@ -561,174 +1108,213 @@ export function ManageLibrary() {
                 Add Item
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-9xl w-full max-h-[105vh] overflow-y-auto">
+            <DialogContent className="max-w-7xl w-full max-h-[98vh] overflow-hidden">
               <DialogHeader>
                 <DialogTitle>{editingItem ? "Edit Library Item" : "Add New Library Item"}</DialogTitle>
               </DialogHeader>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
-                {/* Left: Details and Images (2 columns) */}
-                <div className="md:col-span-2 space-y-6">
-                  {/* Basic Details Row - Name, Tag ID, Quantity */}
-                  <div className="grid md:grid-cols-3 gap-6">
-                    <div className="flex-1">
-                      <Label htmlFor="name" className="text-sm font-medium">Book Name *</Label>
-                      <Input
-                        id="name"
-                        value={editingItem ? editingItem.item_name : newItem.item_name}
-                        onChange={(e) => editingItem
-                          ? setEditingItem((prev) => prev && { ...prev, item_name: e.target.value })
-                          : setNewItem((prev) => ({ ...prev, item_name: e.target.value }))}
-                        placeholder="Enter book name"
-                        className={`mt-1 w-full h-9 text-sm ${formErrors.item_name ? 'border-red-500' : ''}`}
-                      />
-                      {formErrors.item_name && (
-                        <p className="text-red-500 text-xs mt-1">{formErrors.item_name}</p>
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <Label htmlFor="tagId" className="text-sm font-medium">Tag ID (optional)</Label>
-                      <Input
-                        id="tagId"
-                        value={editingItem ? editingItem.item_tag_id : newItem.item_tag_id}
-                        onChange={e => editingItem
-                          ? setEditingItem((prev) => prev && { ...prev, item_tag_id: e.target.value })
-                          : setNewItem((prev) => ({ ...prev, item_tag_id: e.target.value }))}
-                        placeholder="845"
-                        className="mt-1 w-full h-9 text-sm"
-                      />
-                    </div>
-                    <div className="flex-1">
-                      <Label htmlFor="quantity" className="text-sm font-medium">Quantity *</Label>
-                      <Input
-                        id="quantity"
-                        type="number"
-                        value={editingItem ? editingItem.item_quantity : newItem.item_quantity}
-                        onChange={(e) => editingItem
-                          ? setEditingItem((prev) => prev && { ...prev, item_quantity: Number.parseInt(e.target.value) })
-                          : setNewItem((prev) => ({ ...prev, item_quantity: Number.parseInt(e.target.value) }))}
-                        min="1"
-                        className={`mt-1 w-full h-9 text-sm ${formErrors.item_quantity ? 'border-red-500' : ''}`}
-                      />
-                      {formErrors.item_quantity && (
-                        <p className="text-red-500 text-xs mt-1">{formErrors.item_quantity}</p>
-                      )}
-                    </div>
-                  </div>
-                  {/* Location, Category and Faculty Row */}
-                  <div className="grid md:grid-cols-3 gap-6">
-                    <div className="flex-1 min-w-[180px] md:min-w-[220px]">
-                      <Label htmlFor="location" className="text-sm font-medium">Location *</Label>
-                      <Select
-                        value={editingItem ? editingItem.item_location : newItem.item_location}
-                        onValueChange={(value) => editingItem
-                          ? setEditingItem((prev) => prev && { ...prev, item_location: value })
-                          : setNewItem((prev) => ({ ...prev, item_location: value }))}
-                      >
-                        <SelectTrigger className={`mt-1 ${formErrors.item_location ? 'border-red-500' : ''}`}>
-                          <SelectValue placeholder="Select location" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {locationOptions.map((location) => (
-                            <SelectItem key={location} value={location}>
-                              {location}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {formErrors.item_location && (
-                        <p className="text-red-500 text-xs mt-1">{formErrors.item_location}</p>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-[180px] md:min-w-[220px]">
-                      <Label htmlFor="category" className="text-sm font-medium">Category *</Label>
-                      <Select
-                        value={editingItem ? editingItem.item_category : newItem.item_category}
-                        onValueChange={(value) => editingItem
-                          ? setEditingItem((prev) => prev && { ...prev, item_category: value })
-                          : setNewItem((prev) => ({ ...prev, item_category: value }))}
-                      >
-                        <SelectTrigger className={`mt-1 ${formErrors.item_category ? 'border-red-500' : ''}`}>
-                          <SelectValue placeholder="Select category" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {categoryOptions.map((category) => (
-                            <SelectItem key={category} value={category}>
-                              {category}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {formErrors.item_category && (
-                        <p className="text-red-500 text-xs mt-1">{formErrors.item_category}</p>
-                      )}
-                    </div>
-                    {/* Faculty select */}
-                    <div className="flex-1 min-w-[180px] md:min-w-[220px]">
-                      <Label htmlFor="faculty" className="text-sm font-medium">Faculty *</Label>
-                      <Select
-                        value={editingItem ? (editingItem as any).faculty_id : newItem.faculty_id}
-                        onValueChange={(value) => editingItem
-                          ? setEditingItem((prev) => prev && ({ ...(prev as any), faculty_id: value }))
-                          : setNewItem((prev) => ({ ...prev, faculty_id: value }))}
-                      >
-                        <SelectTrigger className={`mt-1 ${formErrors.faculty_id ? 'border-red-500' : ''}`}>
-                          <SelectValue placeholder="Select faculty" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {facultyOptions.map((fac) => (
-                            <SelectItem key={fac.id} value={fac.id}>{fac.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {formErrors.faculty_id && (
-                        <p className="text-red-500 text-xs mt-1">{formErrors.faculty_id}</p>
-                      )}
-                    </div>
-                  </div>
-                  {/* Description and Specification Row */}
-                  <div className="grid md:grid-cols-2 gap-6">
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="description" className="text-sm font-medium">Description *</Label>
-                        <Button variant="outline" size="sm" type="button" className="h-8 ml-2">gen</Button>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 h-[calc(90vh-120px)] overflow-y-auto">
+                {/* Left Column: Basic Info & Images */}
+                <div className="space-y-6 pr-3 pl-3">
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="col-span-2">
+                        <Label htmlFor="name">Book Name *</Label>
+                        <Input 
+                          id="name" 
+                          value={editingItem ? editingItem.item_name : newItem.item_name} 
+                          onChange={(e) => editingItem
+                            ? setEditingItem((prev) => prev && { ...prev, item_name: e.target.value })
+                            : setNewItem((prev) => ({ ...prev, item_name: e.target.value }))}
+                          className={`mt-1 ${formErrors.item_name ? 'border-red-500' : ''}`} 
+                        />
+                        {formErrors.item_name && <p className="text-red-500 text-xs mt-1">{formErrors.item_name}</p>}
                       </div>
-                      <Textarea
-                        id="description"
-                        value={editingItem ? editingItem.item_description : newItem.item_description}
-                        onChange={e => editingItem
-                          ? setEditingItem((prev) => prev && { ...prev, item_description: e.target.value })
-                          : setNewItem((prev) => ({ ...prev, item_description: e.target.value }))}
-                        placeholder="Enter book description"
-                        className={`mt-1 w-full text-sm ${formErrors.item_description ? 'border-red-500' : ''}`}
-                        rows={4}
-                      />
-                      {formErrors.item_description && (
-                        <p className="text-red-500 text-xs mt-1">{formErrors.item_description}</p>
-                      )}
+                      <div className="col-span-1">
+                        <Label htmlFor="tagId">Tag ID (optional)</Label>
+                        <Input 
+                          id="tagId" 
+                          value={editingItem ? editingItem.item_tag_id : newItem.item_tag_id} 
+                          onChange={e => editingItem
+                            ? setEditingItem((prev) => prev && { ...prev, item_tag_id: e.target.value })
+                            : setNewItem((prev) => ({ ...prev, item_tag_id: e.target.value }))}
+                          className="mt-1" 
+                        />
+                      </div>
                     </div>
-                    <div className="flex-1">
-                      <Label htmlFor="specification" className="text-sm font-medium">Specifications</Label>
-                      <Textarea
-                        id="specification"
-                        value={editingItem ? editingItem.item_specification : newItem.item_specification}
-                        onChange={e => editingItem
-                          ? setEditingItem((prev) => prev && { ...prev, item_specification: e.target.value })
-                          : setNewItem((prev) => ({ ...prev, item_specification: e.target.value }))}
-                        placeholder=""
-                        className="mt-1 w-full text-sm"
-                        rows={4}
-                      />
+                    <div className="flex gap-3 items-end">
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="location">Location *</Label>
+                          <div className="flex space-x-1">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setShowAddLocation(true)}
+                              className="h-6 w-6 p-0"
+                              title="Add location"
+                              aria-label="Add location"
+                            >
+                              <Plus className="h-3 w-3" />
+                            </Button>
+                            {newItem.item_location && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setLocationToDelete(newItem.item_location)
+                                  setIsDeleteLocationDialogOpen(true)
+                                }}
+                                className="h-6 w-6 p-0 text-red-600 hover:text-red-700"
+                                title="Delete location"
+                                aria-label="Delete location"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                        {showAddLocation ? (
+                          <div ref={locationInputRef} className="flex gap-2 mt-1">
+                            <Input
+                              placeholder="Enter location (e.g., Library A, Storage Room)"
+                              value={newLocation}
+                              onChange={(e) => setNewLocation(e.target.value)}
+                              className="flex-1"
+                            />
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={handleAddLocation}
+                              disabled={!newLocation.trim() || isSavingLocation}
+                            >
+                              {isSavingLocation ? "Adding..." : "Add"}
+                            </Button>
+                          </div>
+                        ) : (
+                          <Select 
+                            value={editingItem ? editingItem.item_location : newItem.item_location} 
+                            onValueChange={(value) => editingItem
+                              ? setEditingItem((prev) => prev && { ...prev, item_location: value })
+                              : setNewItem((prev) => ({ ...prev, item_location: value }))}
+                          >
+                            <SelectTrigger className={`mt-1 ${formErrors.item_location ? 'border-red-500' : ''}`}>
+                              <SelectValue placeholder="Select location" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {locationOptions.map((location) => (
+                                <SelectItem key={location} value={location}>
+                                  {location}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                        {formErrors.item_location && <p className="text-red-500 text-xs mt-1">{formErrors.item_location}</p>}
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="category">Category *</Label>
+                          <div className="flex space-x-1">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setShowAddCategory(true)}
+                              className="h-6 w-6 p-0"
+                              title="Add category"
+                              aria-label="Add category"
+                            >
+                              <Plus className="h-3 w-3" />
+                            </Button>
+                            {newItem.item_category && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setCategoryToDelete(newItem.item_category)
+                                  setIsDeleteCategoryDialogOpen(true)
+                                }}
+                                className="h-6 w-6 p-0 text-red-600 hover:text-red-700"
+                                title="Delete category"
+                                aria-label="Delete category"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                        {showAddCategory ? (
+                          <div ref={categoryInputRef} className="flex gap-2 mt-1">
+                            <Input
+                              placeholder="Enter category (e.g., Computer Science, Electronics)"
+                              value={newCategory}
+                              onChange={(e) => setNewCategory(e.target.value)}
+                              className="flex-1"
+                            />
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={handleAddCategory}
+                              disabled={!newCategory.trim() || isSavingCategory}
+                            >
+                              {isSavingCategory ? "Adding..." : "Add"}
+                            </Button>
+                          </div>
+                        ) : (
+                          <Select 
+                            value={editingItem ? editingItem.item_category : newItem.item_category} 
+                            onValueChange={(value) => editingItem
+                              ? setEditingItem((prev) => prev && { ...prev, item_category: value })
+                              : setNewItem((prev) => ({ ...prev, item_category: value }))}
+                          >
+                            <SelectTrigger className={`mt-1 ${formErrors.item_category ? 'border-red-500' : ''}`}>
+                              <SelectValue placeholder="Select category" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {categoryOptions.map((category) => (
+                                <SelectItem key={category} value={category}>
+                                  {category}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                        {formErrors.item_category && <p className="text-red-500 text-xs mt-1">{formErrors.item_category}</p>}
+                      </div>
+                      <div className="w-20">
+                        <Label htmlFor="quantity">Quantity *</Label>
+                        <Input 
+                          id="quantity" 
+                          type="number" 
+                          value={editingItem ? editingItem.item_quantity : newItem.item_quantity} 
+                          onChange={(e) => editingItem
+                            ? setEditingItem((prev) => prev && { ...prev, item_quantity: Number.parseInt(e.target.value) })
+                            : setNewItem((prev) => ({ ...prev, item_quantity: Number.parseInt(e.target.value) }))}
+                          min="1" 
+                          className={`mt-1 ${formErrors.item_quantity ? 'border-red-500' : ''}`} 
+                        />
+                        {formErrors.item_quantity && <p className="text-red-500 text-xs mt-1">{formErrors.item_quantity}</p>}
+                      </div>
                     </div>
                   </div>
-                  {/* Component Images Section */}
-                  <div>
-                    <div className="font-semibold mb-2">Book Images</div>
-                    <div className="flex flex-col md:flex-row gap-4">
-                      <div className="flex-1">
-                        <Label className="text-sm font-medium">Front Image *</Label>
-                        <Input
-                          type="file"
-                          accept="image/*"
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-medium text-gray-900 border-b pb-2">Book Images</h3>
+                      <Button variant="outline" size="sm" type="button" className="h-8">
+                        <img src="/genAI_icon.png" alt="GenAI" className="h-7 w-7" />
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="frontImage">Front Image *</Label>
+                        <Input 
+                          id="frontImage" 
+                          type="file" 
+                          accept="image/*" 
                           onChange={e => {
                             const file = e.target.files?.[0] || null
                             setFrontImageFile(file)
@@ -740,19 +1326,25 @@ export function ManageLibrary() {
                               setFrontImagePreview(null)
                             }
                           }}
+                          className={`mt-1 ${formErrors.frontImage ? 'border-red-500' : ''}`} 
                         />
+                        {formErrors.frontImage && <p className="text-red-500 text-xs mt-1">{formErrors.frontImage}</p>}
                         {frontImagePreview && (
-                          <img src={frontImagePreview} alt="Front Preview" className="mt-2 w-full h-40 object-contain rounded-lg bg-gray-50" />
-                        )}
-                        {formErrors.frontImage && (
-                          <p className="text-red-500 text-xs mt-1">{formErrors.frontImage}</p>
+                          <div className="mt-2">
+                            <img
+                              src={frontImagePreview}
+                              alt="Front Preview"
+                              className="w-full h-40 object-contain rounded-lg bg-gray-50"
+                            />
+                          </div>
                         )}
                       </div>
-                      <div className="flex-1">
-                        <Label className="text-sm font-medium">Back Image *</Label>
-                        <Input
-                          type="file"
-                          accept="image/*"
+                      <div>
+                        <Label htmlFor="backImage">Back Image *</Label>
+                        <Input 
+                          id="backImage" 
+                          type="file" 
+                          accept="image/*" 
                           onChange={e => {
                             const file = e.target.files?.[0] || null
                             setBackImageFile(file)
@@ -764,119 +1356,164 @@ export function ManageLibrary() {
                               setBackImagePreview(null)
                             }
                           }}
+                          className={`mt-1 ${formErrors.backImage ? 'border-red-500' : ''}`} 
                         />
+                        {formErrors.backImage && <p className="text-red-500 text-xs mt-1">{formErrors.backImage}</p>}
                         {backImagePreview && (
-                          <img src={backImagePreview} alt="Back Preview" className="mt-2 w-full h-40 object-contain rounded-lg bg-gray-50" />
-                        )}
-                        {formErrors.backImage && (
-                          <p className="text-red-500 text-xs mt-1">{formErrors.backImage}</p>
+                          <div className="mt-2">
+                            <img
+                              src={backImagePreview}
+                              alt="Back Preview"
+                              className="w-full h-40 object-contain rounded-lg bg-gray-50"
+                            />
+                          </div>
                         )}
                       </div>
                     </div>
                   </div>
                 </div>
-                {/* Right: Purchase Details */}
-                <div className="md:col-span-1 space-y-6">
-                  <div className="font-semibold mb-2">Purchase Details (Optional)</div>
-                  <div className="space-y-4">
+                {/* Right Column: Details & Purchase Info */}
+                <div className="space-y-6 pr-2">
+                  <div className="space-y-3">
                     <div>
-                      <Label htmlFor="invoice_number" className="text-sm font-medium">Invoice Number</Label>
-                      <Input
-                        id="invoice_number"
-                        value={editingItem ? editingItem.invoice_number : newItem.invoice_number}
+                      <Label htmlFor="description">Description *</Label>
+                      <Textarea 
+                        id="description" 
+                        value={editingItem ? editingItem.item_description : newItem.item_description} 
                         onChange={e => editingItem
-                          ? setEditingItem((prev) => prev && { ...prev, invoice_number: e.target.value })
-                          : setNewItem((prev) => ({ ...prev, invoice_number: e.target.value }))}
-                        placeholder="inv334452"
-                        className="mt-1 w-full h-9 text-sm"
+                          ? setEditingItem((prev) => prev && { ...prev, item_description: e.target.value })
+                          : setNewItem((prev) => ({ ...prev, item_description: e.target.value }))}
+                        rows={3} 
+                        className={`mt-1 ${formErrors.item_description ? 'border-red-500' : ''}`} 
                       />
-                      {formErrors.invoice_number && (
-                        <p className="text-red-500 text-xs mt-1">{formErrors.invoice_number}</p>
-                      )}
+                      {formErrors.item_description && <p className="text-red-500 text-xs mt-1">{formErrors.item_description}</p>}
                     </div>
                     <div>
-                      <Label htmlFor="purchased_from" className="text-sm font-medium">Purchased From</Label>
-                      <Input
-                        id="purchased_from"
-                        value={editingItem ? editingItem.purchased_from : newItem.purchased_from}
+                      <Label htmlFor="specifications">Specifications</Label>
+                      <Textarea 
+                        id="specifications" 
+                        value={editingItem ? editingItem.item_specification : newItem.item_specification} 
                         onChange={e => editingItem
-                          ? setEditingItem((prev) => prev && { ...prev, purchased_from: e.target.value })
-                          : setNewItem((prev) => ({ ...prev, purchased_from: e.target.value }))}
-                        placeholder="amazon"
-                        className="mt-1 w-full h-9 text-sm"
+                          ? setEditingItem((prev) => prev && { ...prev, item_specification: e.target.value })
+                          : setNewItem((prev) => ({ ...prev, item_specification: e.target.value }))}
+                        rows={3} 
+                        className="mt-1" 
                       />
-                      {formErrors.purchased_from && (
-                        <p className="text-red-500 text-xs mt-1">{formErrors.purchased_from}</p>
-                      )}
                     </div>
-                    <div>
-                      <Label htmlFor="purchase_date" className="text-sm font-medium">Purchase Date</Label>
-                      <Input
-                        id="purchase_date"
-                        type="date"
-                        value={editingItem ? editingItem.purchase_date : newItem.purchase_date}
-                        onChange={e => editingItem
-                          ? setEditingItem((prev) => prev && { ...prev, purchase_date: e.target.value })
-                          : setNewItem((prev) => ({ ...prev, purchase_date: e.target.value }))}
-                        className="mt-1 w-full h-9 text-sm"
-                      />
-                      {formErrors.purchase_date && (
-                        <p className="text-red-500 text-xs mt-1">{formErrors.purchase_date}</p>
-                      )}
+                  </div>
+                  <div className="space-y-3">
+                    <h3 className="text-lg font-medium text-gray-900 border-b pb-2">Purchase Details (Optional)</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="invoiceNumber">Invoice Number</Label>
+                        <Input 
+                          id="invoiceNumber" 
+                          value={editingItem ? editingItem.invoice_number : newItem.invoice_number} 
+                          onChange={e => editingItem
+                            ? setEditingItem((prev) => prev && { ...prev, invoice_number: e.target.value })
+                            : setNewItem((prev) => ({ ...prev, invoice_number: e.target.value }))}
+                          className={`mt-1 ${formErrors.invoice_number ? 'border-red-500' : ''}`} 
+                        />
+                        {formErrors.invoice_number && <p className="text-red-500 text-xs mt-1">{formErrors.invoice_number}</p>}
+                      </div>
+                      <div>
+                        <Label htmlFor="purchasedFrom">Purchased From</Label>
+                        <Input 
+                          id="purchasedFrom" 
+                          value={editingItem ? editingItem.purchased_from : newItem.purchased_from} 
+                          onChange={e => editingItem
+                            ? setEditingItem((prev) => prev && { ...prev, purchased_from: e.target.value })
+                            : setNewItem((prev) => ({ ...prev, purchased_from: e.target.value }))}
+                          className={`mt-1 ${formErrors.purchased_from ? 'border-red-500' : ''}`} 
+                        />
+                        {formErrors.purchased_from && <p className="text-red-500 text-xs mt-1">{formErrors.purchased_from}</p>}
+                      </div>
                     </div>
-                    <div>
-                      <Label htmlFor="purchase_value" className="text-sm font-medium">Purchase Value</Label>
-                      <Input
-                        id="purchase_value"
-                        type="number"
-                        value={editingItem ? editingItem.purchase_value : newItem.purchase_value}
-                        onChange={e => editingItem
-                          ? setEditingItem((prev) => prev && { ...prev, purchase_value: e.target.value })
-                          : setNewItem((prev) => ({ ...prev, purchase_value: e.target.value }))}
-                        placeholder="137"
-                        className="mt-1 w-full h-9 text-sm"
-                      />
-                      {formErrors.purchase_value && (
-                        <p className="text-red-500 text-xs mt-1">{formErrors.purchase_value}</p>
-                      )}
-                    </div>
-                    <div>
-                      <Label htmlFor="purchase_currency" className="text-sm font-medium">Currency</Label>
-                      <Input
-                        id="purchase_currency"
-                        value={editingItem ? editingItem.purchase_currency : newItem.purchase_currency}
-                        onChange={e => editingItem
-                          ? setEditingItem((prev) => prev && { ...prev, purchase_currency: e.target.value })
-                          : setNewItem((prev) => ({ ...prev, purchase_currency: e.target.value }))}
-                        placeholder="INR - Indian Rupee"
-                        className="mt-1 w-full h-9 text-sm"
-                      />
-                      {formErrors.purchase_currency && (
-                        <p className="text-red-500 text-xs mt-1">{formErrors.purchase_currency}</p>
-                      )}
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <Label htmlFor="purchasedDate">Purchase Date</Label>
+                        <Input 
+                          id="purchasedDate" 
+                          type="date" 
+                          value={editingItem ? editingItem.purchase_date : newItem.purchase_date} 
+                          onChange={e => editingItem
+                            ? setEditingItem((prev) => prev && { ...prev, purchase_date: e.target.value })
+                            : setNewItem((prev) => ({ ...prev, purchase_date: e.target.value }))}
+                          className={`mt-1 ${formErrors.purchase_date ? 'border-red-500' : ''}`} 
+                        />
+                        {formErrors.purchase_date && <p className="text-red-500 text-xs mt-1">{formErrors.purchase_date}</p>}
+                      </div>
+                      <div>
+                        <Label htmlFor="purchasedValue">Purchase Value</Label>
+                        <Input 
+                          id="purchasedValue" 
+                          type="number" 
+                          min="0" 
+                          step="0.01" 
+                          value={editingItem ? editingItem.purchase_value : newItem.purchase_value} 
+                          onChange={e => editingItem
+                            ? setEditingItem((prev) => prev && { ...prev, purchase_value: e.target.value })
+                            : setNewItem((prev) => ({ ...prev, purchase_value: e.target.value }))}
+                          placeholder="0.00" 
+                          className={`mt-1 ${formErrors.purchase_value ? 'border-red-500' : ''}`} 
+                        />
+                        {formErrors.purchase_value && <p className="text-red-500 text-xs mt-1">{formErrors.purchase_value}</p>}
+                      </div>
+                      <div>
+                        <Label htmlFor="purchasedCurrency">Currency</Label>
+                        <Select 
+                          value={editingItem ? editingItem.purchase_currency : newItem.purchase_currency} 
+                          onValueChange={value => editingItem
+                            ? setEditingItem((prev) => prev && { ...prev, purchase_currency: value })
+                            : setNewItem((prev) => ({ ...prev, purchase_currency: value }))}
+                        >
+                          <SelectTrigger className={`mt-1 ${formErrors.purchase_currency ? 'border-red-500' : ''}`}>
+                            <SelectValue placeholder="Select currency" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="INR">INR - Indian Rupee</SelectItem>
+                            <SelectItem value="USD">USD - US Dollar</SelectItem>
+                            <SelectItem value="EUR">EUR - Euro</SelectItem>
+                            <SelectItem value="GBP">GBP - British Pound</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {formErrors.purchase_currency && <p className="text-red-500 text-xs mt-1">{formErrors.purchase_currency}</p>}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-              {/* Action Buttons */}
-              <div className="flex justify-end space-x-3 pt-4 border-t mt-6">
-                <Button
-                  variant="outline"
-                  onClick={() => {
+                {/* Form Actions */}
+                <div className="col-span-1 md:col-span-2 flex justify-end space-x-3 pt-4 border-t mt-4">
+                  <Button variant="outline" onClick={() => {
                     setIsAddDialogOpen(false)
                     setIsEditDialogOpen(false)
                     resetForm()
-                  }}
-                  className="px-6"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={editingItem ? handleEditItem : handleAddItem}
-                  disabled={!isAddFormValid()}
-                >
-                  {editingItem ? "Update Item" : "Add Item"}
-                </Button>
+                  }} className="px-6">Cancel</Button>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span tabIndex={0}>
+                          <Button 
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              editingItem ? handleEditItem() : handleAddItem()
+                            }}
+                            disabled={!isAddFormValid()}
+                          >
+                            {isSubmitting ? "Processing..." : (editingItem ? "Update Item" : "Add Item")}
+                          </Button>
+                        </span>
+                      </TooltipTrigger>
+                      {!isAddFormValid() && (
+                        <TooltipContent>
+                          <p>Please fill in all required fields: Book Name, Description, Category, Location, Quantity, Front Image, and Back Image.</p>
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
               </div>
             </DialogContent>
           </Dialog>
@@ -1169,6 +1806,94 @@ export function ManageLibrary() {
               Delete
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Category Confirmation Dialog */}
+      <Dialog open={isDeleteCategoryDialogOpen} onOpenChange={setIsDeleteCategoryDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-red-600" />
+              Delete Category
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this category? This action cannot be undone if the category is not being used by any items.
+            </DialogDescription>
+          </DialogHeader>
+          {categoryToDelete && (
+            <div className="space-y-4">
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="font-medium">Category: {categoryToDelete}</p>
+                <p className="text-sm text-gray-600 mt-1">
+                  This will remove the category from the available options. Items currently using this category will not be affected.
+                </p>
+              </div>
+              
+              <div className="flex justify-end space-x-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsDeleteCategoryDialogOpen(false)
+                    setCategoryToDelete(null)
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => categoryToDelete && handleDeleteCategory(categoryToDelete)}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Category
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Location Confirmation Dialog */}
+      <Dialog open={isDeleteLocationDialogOpen} onOpenChange={setIsDeleteLocationDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-red-600" />
+              Delete Location
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this location? This action cannot be undone if the location is not being used by any items.
+            </DialogDescription>
+          </DialogHeader>
+          {locationToDelete && (
+            <div className="space-y-4">
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="font-medium">Location: {locationToDelete}</p>
+                <p className="text-sm text-gray-600 mt-1">
+                  This will remove the location from the available options. Items currently using this location will not be affected.
+                </p>
+              </div>
+              
+              <div className="flex justify-end space-x-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsDeleteLocationDialogOpen(false)
+                    setLocationToDelete(null)
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => locationToDelete && handleDeleteLocation(locationToDelete)}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Location
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

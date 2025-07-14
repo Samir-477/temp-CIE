@@ -23,8 +23,13 @@ export async function PATCH(
     const currentRequest = await prisma.componentRequest.findUnique({
       where: { id: params.id },
       include: {
-        component: true,
-        student: { include: { user: true } }
+        component: {
+          include: {
+            domain: true
+          }
+        },
+        student: { include: { user: true } },
+        requesting_faculty: { include: { user: true } }
       }
     })
 
@@ -32,17 +37,10 @@ export async function PATCH(
       return NextResponse.json({ error: 'Request not found' }, { status: 404 })
     }
 
-    // Check permissions based on user role
-    if (user.role === 'STUDENT') {
-      const student = await prisma.student.findUnique({ where: { user_id: userId } })
-      if (!student || currentRequest.student_id !== student.id) {
-        return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-      }
-      // Students can only cancel their own pending requests
-      if (status !== 'CANCELLED' || currentRequest.status !== 'PENDING') {
-        return NextResponse.json({ error: 'Invalid status change' }, { status: 400 })
-      }
-    } else if (user.role === 'FACULTY') {
+    // Basic permission checks
+    if (user.role === "STUDENT") {
+      return NextResponse.json({ error: 'Students can no longer update request status. Please contact the coordinator.' }, { status: 403 })
+    } else if (user.role === "FACULTY") {
       const faculty = await prisma.faculty.findUnique({
         where: { user_id: userId },
         include: { domain_assignments: true }
@@ -52,7 +50,7 @@ export async function PATCH(
         return NextResponse.json({ error: 'Faculty profile not found' }, { status: 404 })
       }
 
-      // Check if faculty is coordinator of the component's domain
+      // For status updates, check if faculty is coordinator of the component's domain
       const isCoordinator = currentRequest.component.domain_id ? 
         faculty.domain_assignments.some(assignment => assignment.domain_id === currentRequest.component.domain_id) : 
         true // Allow access to components without specific domain
@@ -60,7 +58,30 @@ export async function PATCH(
       if (!isCoordinator) {
         return NextResponse.json({ error: 'Access denied - Not assigned to this domain' }, { status: 403 })
       }
-    } else if (user.role !== 'ADMIN') {
+
+      // Coordinators can mark as COLLECTED, RETURNED, REJECTED, or update due date (renew)
+      if (status === 'RETURNED' && currentRequest.status !== 'COLLECTED') {
+        return NextResponse.json({ error: 'Can only mark as returned after collection' }, { status: 400 })
+      }
+      // Allow renew by updating due_date for both COLLECTED and RENEWED statuses, no need for status: 'RENEWED'
+      if (body.due_date && ['COLLECTED', 'RENEWED'].includes(currentRequest.status)) {
+        // Allow PATCH with just due_date to extend loan
+        let updateData: any = {
+          due_date: new Date(body.due_date),
+          faculty_notes: faculty_notes || currentRequest.faculty_notes
+        }
+        const updatedRequest = await prisma.componentRequest.update({
+          where: { id: params.id },
+          data: updateData,
+          include: {
+            component: true,
+            student: { include: { user: true } },
+            faculty: { include: { user: true } }
+          }
+        })
+        return NextResponse.json(updatedRequest)
+      }
+    } else if (user.role !== "ADMIN") {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
@@ -70,33 +91,20 @@ export async function PATCH(
       faculty_notes: faculty_notes || currentRequest.faculty_notes
     }
 
-    // Set faculty_id if user is faculty
-    if (user.role === 'FACULTY') {
-      const faculty = await prisma.faculty.findUnique({ where: { user_id: userId } })
-      if (faculty) {
-        updateData.faculty_id = faculty.id
-      }
-    }
-
     // Handle status-specific updates
     if (status === 'COLLECTED' && collection_date) {
       updateData.collection_date = new Date(collection_date)
-      
-      // Decrease available quantity when collected
-      await prisma.labComponent.update({
-        where: { id: currentRequest.component_id },
-        data: { available_quantity: { decrement: currentRequest.quantity } }
-      })
+      if (body.due_date) {
+        updateData.due_date = new Date(body.due_date)
+      }
     }
-
     if (status === 'RETURNED' && return_date) {
       updateData.return_date = new Date(return_date)
-      
-      // Increase available quantity when returned
-      await prisma.labComponent.update({
-        where: { id: currentRequest.component_id },
-        data: { available_quantity: { increment: currentRequest.quantity } }
-      })
+    } else if (status === 'RETURNED' && !return_date) {
+      updateData.return_date = new Date()
+    }
+    if (status === 'RENEWED' && body.due_date) {
+      updateData.due_date = new Date(body.due_date)
     }
 
     const updatedRequest = await prisma.componentRequest.update({

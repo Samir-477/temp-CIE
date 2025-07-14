@@ -28,7 +28,6 @@ import {
   MapPin,
   Calendar,
   Moon,
-  Settings,
   Sun,
   Bell,
 } from "lucide-react"
@@ -122,14 +121,14 @@ export function DashboardLayout({ children, currentPage, onPageChange, menuItems
   const mainMargin = sidebarCollapsed ? "lg:ml-16" : "lg:ml-64"
 
   const getRoleColor = (role: string) => {
-    switch (role.toLowerCase()) {
-      case "admin":
+    switch (role) {
+      case "ADMIN":
         return "bg-red-100 text-red-800"
-      case "faculty":
+      case "FACULTY":
         return "bg-blue-100 text-blue-800"
-      case "professor":
+      case "PROFESSOR":
         return "bg-purple-100 text-purple-800"
-      case "student":
+      case "STUDENT":
         return "bg-green-100 text-green-800"
       default:
         return "bg-gray-100 text-gray-800"
@@ -148,8 +147,8 @@ export function DashboardLayout({ children, currentPage, onPageChange, menuItems
       join_date: user.join_date,
     }
 
-    switch (user.role.toLowerCase()) {
-      case "admin":
+    switch (user.role) {
+      case "ADMIN":
         return {
           ...baseData,
           role: "admin" as const,
@@ -158,7 +157,7 @@ export function DashboardLayout({ children, currentPage, onPageChange, menuItems
           permissions: ["Full System Access", "User Management", "System Configuration"],
           working_hours: "9:00 AM - 5:00 PM",
         }
-      case "faculty":
+      case "FACULTY":
         return {
           ...baseData,
           role: "faculty" as const,
@@ -168,7 +167,7 @@ export function DashboardLayout({ children, currentPage, onPageChange, menuItems
           specialization: "Software Engineering",
           office_hours: "Mon-Wed-Fri: 2:00 PM - 4:00 PM",
         }
-      case "professor":
+      case "PROFESSOR":
         return {
           ...baseData,
           role: "professor" as const,
@@ -178,7 +177,7 @@ export function DashboardLayout({ children, currentPage, onPageChange, menuItems
           specialization: "Database Systems",
           office_hours: "Tue-Thu: 1:00 PM - 3:00 PM",
         }
-      case "student":
+      case "STUDENT":
         return {
           ...baseData,
           role: "student" as const,
@@ -370,73 +369,7 @@ export function DashboardLayout({ children, currentPage, onPageChange, menuItems
 
           {/* Bottom navigation items */}
           <div className="px-2 py-1 mt-auto">
-            {/* My Profile */}
-            <div className="mb-2">
-              <button
-                className={cn(
-                  "w-full flex items-center p-3 transition-all duration-200 rounded-lg mx-1",
-                  sidebarCollapsed ? "justify-center px-2" : "px-4",
-                  "text-gray-800 hover:bg-blue-100 hover:text-indigo-800"
-                )}
-                onClick={() => {
-                  onPageChange('profile');
-                  setSidebarOpen(false);
-                }}
-                title={sidebarCollapsed ? "Settings" : undefined}
-              >
-                <Settings 
-                  className={cn(
-                    "h-5 w-5 transition-transform duration-300",
-                    !sidebarCollapsed && "mr-3",
-                    "text-gray-600"
-                  )} 
-                />
-                {!sidebarCollapsed && (
-                  <span className="text-sm font-medium">
-                    Settings
-                  </span>
-                )}
-              </button>
-            </div>
-
-            {/* Get Help */}
-            <div className="mb-2">
-              <button
-                className={cn(
-                  "w-full flex items-center p-3 transition-all duration-200 rounded-lg mx-1",
-                  sidebarCollapsed ? "justify-center px-2" : "px-4",
-                  "text-gray-800 hover:bg-blue-100 hover:text-indigo-800"
-                )}
-                onClick={() => {
-                  // You can add help navigation logic here
-                  console.log("Get Help clicked");
-                }}
-                title={sidebarCollapsed ? "Get Help" : undefined}
-              >
-                <svg 
-                  className={cn(
-                    "h-5 w-5 transition-transform duration-300",
-                    !sidebarCollapsed && "mr-3",
-                    "text-gray-600"
-                  )} 
-                  fill="none" 
-                  viewBox="0 0 24 24" 
-                  stroke="currentColor"
-                >
-                  <path 
-                    strokeLinecap="round" 
-                    strokeLinejoin="round" 
-                    strokeWidth={2} 
-                    d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" 
-                  />
-                </svg>
-                {!sidebarCollapsed && (
-                  <span className="text-sm font-medium">
-                    Get Help
-                  </span>
-                )}
-              </button>
-            </div>
+            {/* Bottom navigation items removed */}
           </div>
 
           {/* Collapse button */}

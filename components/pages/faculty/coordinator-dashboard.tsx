@@ -45,35 +45,45 @@ import { useAuth } from "@/components/auth-provider"
 import { LibraryManagement } from "@/components/pages/faculty/library-management"
 import { LibraryInventoryStatus } from "@/components/pages/faculty/library-inventory-status"
 import { LabInventoryStatus } from "@/components/pages/faculty/lab-inventory-status"
-import { SimplifiedLibraryManagement } from "@/components/pages/faculty/simplified-library-management"
+import { LabComponentsManagement } from "./lab-components-management"
 import { 
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import StatusBarChart from "@/components/StatusBarChart";
 
 interface ComponentRequest {
   id: string
-  student: {
+  student?: {
     user: { name: string; email: string }
     student_id: string
+  }
+  requesting_faculty?: {
+    user: { name: string; email: string }
   }
   component: {
     component_name: string
     domain?: { name: string }
   }
-  project: { name: string }
   quantity: number
   request_date: string
   required_date: string
-  due_date?: string
-  collection_date?: string
-  return_date?: string
   status: string
   notes?: string
   faculty_notes?: string
   purpose: string
+  project?: {
+    name: string
+    completion_date?: string
+  }
+  due_date?: string
+  collection_date?: string
+  return_date?: string
+  faculty?: {
+    user: { name: string; email: string }
+  }
   fine_amount?: number
   fine_paid?: boolean
   payment_proof?: string
@@ -102,6 +112,9 @@ interface LibraryRequest {
   fine_amount?: number
   fine_paid?: boolean
   payment_proof?: string
+  faculty?: {
+    user: { name: string; email: string }
+  }
 }
 
 interface InternshipProject {
@@ -153,10 +166,11 @@ export function CoordinatorDashboard() {
   const [internshipProjects, setInternshipProjects] = useState<InternshipProject[]>([])
   const [loading, setLoading] = useState(true)
   const [facultyNotes, setFacultyNotes] = useState("")
-  const [activeTab, setActiveTab] = useState("analytics")
+  // Set default tab to 'analytics'
+  const [activeTab, setActiveTab] = useState('analytics')
   const [searchTerm, setSearchTerm] = useState("")
-  const [statusFilter, setStatusFilter] = useState<"all" | "due" | "not-due">("all")
-
+  // Replace combinedFilter and filterOptions with a single filter state
+  const [activeFilter, setActiveFilter] = useState('all'); // 'all', 'due', 'not-due', 'student', 'faculty'
   // Add coordinator domains state with enhanced type
   const [coordinatorDomains, setCoordinatorDomains] = useState<Array<{
     id: string; 
@@ -169,11 +183,35 @@ export function CoordinatorDashboard() {
   // New state for selected domain
   const [selectedDomain, setSelectedDomain] = useState(coordinatorDomains[0])
 
+  // Add role selection state
+  const [selectedRole, setSelectedRole] = useState<'library' | 'lab' | null>(null)
+
+  // In the CoordinatorDashboard component, add state for history search and filter:
+  const [historySearchTerm, setHistorySearchTerm] = useState("");
+  const [historyFilter, setHistoryFilter] = useState("all"); // 'all', 'due', 'not-due', 'student', 'faculty'
+
+  const [activeLoansPage, setActiveLoansPage] = useState(1);
+
   useEffect(() => {
     fetchRequests()
     fetchCoordinatorDomains()
     fetchInternships()
   }, [])
+
+  // Auto-select role if faculty has only one role
+  useEffect(() => {
+    if (coordinatorDomains.length > 0 && !selectedRole) {
+      const hasLibraryRole = coordinatorDomains.some(domain => domain.hasLibraryItems)
+      const hasLabRole = coordinatorDomains.some(domain => domain.hasLabComponents)
+      
+      if (hasLibraryRole && !hasLabRole) {
+        setSelectedRole('library')
+      } else if (hasLabRole && !hasLibraryRole) {
+        setSelectedRole('lab')
+      }
+      // If both roles exist, don't auto-select - let user choose
+    }
+  }, [coordinatorDomains, selectedRole])
 
   const fetchCoordinatorDomains = async () => {
     try {
@@ -429,42 +467,106 @@ export function CoordinatorDashboard() {
     }
   }
 
-  // Add renewal functionality
-  const handleRenewRequest = async (requestId: string) => {
+  const handleMarkAsCollected = async (request: any) => {
     try {
-      const newDueDate = new Date()
-      newDueDate.setDate(newDueDate.getDate() + 14) // Extend by 14 days
-      
-      const response = await fetch(`/api/library-requests/${requestId}`, {
+      const today = new Date();
+      // Use the original required_date as the due date
+      let dueDate = request.required_date ? new Date(request.required_date) : today;
+      const response = await fetch(`/api/component-requests/${request.id}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
           "x-user-id": user?.id || ""
         },
-        body: JSON.stringify({ 
-          due_date: newDueDate.toISOString(),
-          faculty_notes: `Renewed for 14 days by coordinator on ${new Date().toLocaleDateString()}`
+        body: JSON.stringify({
+          status: "COLLECTED",
+          collection_date: today.toISOString(),
+          due_date: dueDate.toISOString(),
+          faculty_notes: `Marked as collected on ${today.toLocaleDateString()}`
         })
-      })
-
+      });
       if (response.ok) {
-        await fetchRequests()
+        await fetchRequests();
+        toast({
+          title: "Marked as Collected",
+          description: `Collected on ${today.toLocaleDateString()} with due date ${dueDate.toLocaleDateString()}`
+        });
+      } else {
+        const error = await response.json();
+        throw new Error(error.error);
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to mark as collected",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleRenewRequest = async (requestId: string, currentDueDate?: string) => {
+    try {
+      let baseDate;
+      if (selectedRole === 'lab') {
+        // Only extend if within 3 days of due date and not overdue
+        const daysLeft = currentDueDate ? Math.ceil((new Date(currentDueDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)) : null;
+        const isOverdue = daysLeft !== null && daysLeft < 0;
+        if (daysLeft === null || isOverdue || daysLeft > 3) {
+          // Do nothing, toast is handled in button logic
+          return;
+        }
+        baseDate = new Date(currentDueDate!);
+        baseDate.setDate(baseDate.getDate() + 14); // Lab: Extend by 14 days from due date
+      } else {
+        baseDate = new Date();
+        baseDate.setDate(baseDate.getDate() + 14); // Library: Always today + 14 days
+      }
+      let response;
+      if (selectedRole === 'lab') {
+        response = await fetch(`/api/component-requests/${requestId}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "x-user-id": user?.id || ""
+          },
+          body: JSON.stringify({
+            due_date: baseDate.toISOString(),
+            faculty_notes: `Renewed for 14 days by coordinator on ${new Date().toLocaleDateString()}`
+          })
+        });
+      } else {
+        response = await fetch(`/api/library-requests/${requestId}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "x-user-id": user?.id || ""
+          },
+          body: JSON.stringify({
+            due_date: baseDate.toISOString(),
+            faculty_notes: `Renewed for 14 days by coordinator on ${new Date().toLocaleDateString()}`
+          })
+        });
+      }
+      if (response.ok) {
+        await fetchRequests();
         toast({
           title: "Item Renewed",
-          description: `Due date extended to ${newDueDate.toLocaleDateString()}`
-        })
+          description: selectedRole === 'lab'
+            ? `Due date extended to ${baseDate.toLocaleDateString()}`
+            : `Due date set to ${baseDate.toLocaleDateString()}`
+        });
       } else {
-        const error = await response.json()
-        throw new Error(error.error)
+        const error = await response.json();
+        throw new Error(error.error);
       }
     } catch (error) {
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "Failed to renew item",
         variant: "destructive",
-      })
+      });
     }
-  }
+  };
 
   const getStatusBadge = (status: string, isOverdueItem?: boolean) => {
     const baseClass = "font-medium"
@@ -479,6 +581,8 @@ export function CoordinatorDashboard() {
           <Badge className={`bg-green-100 text-green-800 ${baseClass}`}>Collected</Badge>
       case "PENDING_RETURN":
         return <Badge className={`bg-orange-100 text-orange-800 ${baseClass}`}>Return Requested</Badge>
+      case "USER_RETURNED":
+        return <Badge className={`bg-purple-100 text-purple-800 ${baseClass}`}>Student Confirmed Return</Badge>
       case "RETURNED":
         return <Badge className={`bg-green-100 text-green-800 ${baseClass}`}>Returned</Badge>
       case "REJECTED":
@@ -553,6 +657,30 @@ export function CoordinatorDashboard() {
     return domainName || "Unassigned"
   }
 
+  const getRequesterName = (request: RequestUnion): string => {
+    if (isComponentRequest(request)) {
+      return request.student?.user.name || request.requesting_faculty?.user.name || "Unknown"
+    } else {
+      return request.student?.user.name || request.faculty?.user.name || "Unknown"
+    }
+  }
+
+  const getRequesterEmail = (request: RequestUnion): string => {
+    if (isComponentRequest(request)) {
+      return request.student?.user.email || request.requesting_faculty?.user.email || "Unknown"
+    } else {
+      return request.student?.user.email || request.faculty?.user.email || "Unknown"
+    }
+  }
+
+  const getRequesterType = (request: RequestUnion): string => {
+    if (isComponentRequest(request)) {
+      return request.student ? "Student" : "Faculty"
+    } else {
+      return request.student ? "Student" : "Faculty"
+    }
+  }
+
   // Helper functions to determine what to show based on domain assignments
   const shouldShowLibraryInventory = () => {
     return coordinatorDomains.some(domain => domain.hasLibraryItems)
@@ -577,6 +705,118 @@ export function CoordinatorDashboard() {
     return coordinatorDomains.filter(domain => domain.hasLabComponents)
   }
 
+  // Determine if user is a lab coordinator
+  const isLabCoordinator = coordinatorDomains.some(domain => domain.hasLabComponents)
+
+  // Determine if user is a library coordinator
+  const isLibraryCoordinator = coordinatorDomains.some(domain => domain.hasLibraryItems)
+
+  // Add tabs for management based on selected coordinator role
+  const dashboardTabs = [
+    { id: 'analytics', label: 'Analytics' },
+    { id: 'collection', label: 'Awaiting Collection' },
+    { id: 'returns', label: 'Active Loans' },
+    { id: 'history', label: 'History' },
+  ];
+  
+  // Add lab-specific tabs for lab coordinators
+  if (selectedRole === 'lab' && isLabCoordinator) {
+    dashboardTabs.splice(1, 0, { id: 'pending-requests', label: 'Pending Requests' });
+  }
+  
+  if (selectedRole === 'library' && isLibraryCoordinator) {
+    dashboardTabs.push({ id: 'library-management', label: 'Library Management' });
+  }
+
+  // Helper: get assigned lab domain IDs and names
+  const assignedLabDomainIds = coordinatorDomains.filter(d => d.hasLabComponents && d.id).map(d => d.id);
+  const assignedLabDomainNames = coordinatorDomains.filter(d => d.hasLabComponents && d.name).map(d => d.name?.toLowerCase?.());
+
+  // Role-based data filtering functions
+  const getRoleSpecificRequests = () => {
+    if (selectedRole === 'library') {
+      return {
+        requests: libraryRequests as RequestUnion[],
+        pendingRequests: pendingLibraryRequests as RequestUnion[],
+        collectionRequests: collectionLibraryRequests as RequestUnion[],
+        returnRequests: returnLibraryRequests as RequestUnion[],
+        historyRequests: libraryRequests.filter(req => req.status === 'RETURNED' || req.status === 'REJECTED') as RequestUnion[],
+        roleName: 'Library'
+      }
+    } else if (selectedRole === 'lab') {
+      // Filter componentRequests to only those for assigned lab domains
+      const filteredComponentRequests = componentRequests.filter(req => {
+        const domain = req.component?.domain;
+        if (!domain) {
+          console.log('Request has no domain:', req.id, req.component?.component_name);
+          return false;
+        }
+        
+        const domainId = (domain as any).id || (domain as any).domain_id;
+        const domainName = (domain as any).name?.toLowerCase?.();
+        
+        const hasMatchingDomainId = domainId && assignedLabDomainIds.includes(domainId);
+        const hasMatchingDomainName = domainName && assignedLabDomainNames.includes(domainName);
+        
+        const isMatch = hasMatchingDomainId || hasMatchingDomainName;
+        
+        if (!isMatch) {
+          console.log('Request filtered out:', req.id, req.component?.component_name, 'Domain:', domainName, 'Assigned domains:', assignedLabDomainNames);
+        }
+        
+        return isMatch;
+      });
+      
+      console.log('Total component requests:', componentRequests.length);
+      console.log('Filtered component requests:', filteredComponentRequests.length);
+      console.log('Assigned lab domain IDs:', assignedLabDomainIds);
+      console.log('Assigned lab domain names:', assignedLabDomainNames);
+      
+      // Lab component request status mapping:
+      // Pending Requests: PENDING
+      // Awaiting Collection: APPROVED
+      // Active Loans: COLLECTED, USER_RETURNED (for coordinator confirmation)
+      // Pending Returns: PENDING_RETURN
+      // History: RETURNED, REJECTED
+      const pending = filteredComponentRequests.filter(req => req.status === 'PENDING') as RequestUnion[];
+      const collection = filteredComponentRequests.filter(req => req.status === 'APPROVED') as RequestUnion[];
+      const active = filteredComponentRequests.filter(req => req.status === 'COLLECTED' || req.status === 'USER_RETURNED') as RequestUnion[];
+      const pendingReturns = filteredComponentRequests.filter(req => req.status === 'PENDING_RETURN') as RequestUnion[];
+      const history = filteredComponentRequests.filter(req => req.status === 'RETURNED' || req.status === 'REJECTED') as RequestUnion[];
+      
+      console.log('Pending requests:', pending.length);
+      console.log('Collection requests:', collection.length);
+      console.log('Active requests:', active.length);
+      console.log('Pending returns:', pendingReturns.length);
+      console.log('History requests:', history.length);
+      
+      return {
+        requests: filteredComponentRequests as RequestUnion[],
+        pendingRequests: pending,
+        collectionRequests: collection,
+        returnRequests: active,
+        pendingReturnRequests: pendingReturns,
+        historyRequests: history,
+        roleName: 'Lab'
+      }
+    }
+    return {
+      requests: [] as RequestUnion[],
+      pendingRequests: [] as RequestUnion[],
+      collectionRequests: [] as RequestUnion[],
+      returnRequests: [] as RequestUnion[],
+      pendingReturnRequests: [] as RequestUnion[],
+      historyRequests: [] as RequestUnion[],
+      roleName: ''
+    }
+  }
+
+  const { requests, pendingRequests, collectionRequests, returnRequests, pendingReturnRequests, historyRequests, roleName } = getRoleSpecificRequests()
+
+  // Check if faculty has multiple roles
+  const hasMultipleRoles = coordinatorDomains.some(domain => domain.hasLibraryItems) && 
+                          coordinatorDomains.some(domain => domain.hasLabComponents)
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -585,265 +825,186 @@ export function CoordinatorDashboard() {
     )
   }
 
-  // Filtered active loans based on search term and status filter
-  const filteredActiveLoans = [...returnComponentRequests, ...returnLibraryRequests].filter(request => {
-    const borrowerName = request.student?.user?.name?.toLowerCase() || ""
-    const srn = request.student?.student_id?.toLowerCase() || ""
-    const itemName = getItemName(request).toLowerCase()
-    const searchTermLower = searchTerm.toLowerCase()
-    
-    // Search filter (borrower name, SRN, or book name)
-    const matchesSearch = borrowerName.includes(searchTermLower) || 
-                         srn.includes(searchTermLower) || 
-                         itemName.includes(searchTermLower)
-    
-    // Status filter
-    if (statusFilter === "all") {
-      return matchesSearch
-    } else if (statusFilter === "due") {
-      return matchesSearch && isOverdue(request.due_date)
-    } else if (statusFilter === "not-due") {
-      return matchesSearch && !isOverdue(request.due_date)
-    }
-    
-    return matchesSearch
-  })
-
+  // Always render the tabbed dashboard interface below
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-gray-900">CIE Team Coordinator Dashboard</h1>
       </div>
 
-      {/* Domain Selection Tabs */}
-      {coordinatorDomains.length > 1 && (
-        <div className="border-b border-gray-200">
-          <nav className="-mb-px flex space-x-8">
-            {coordinatorDomains.map((domain) => (
-              <button
-                key={domain.id}
-                className={`py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
-                  selectedDomain?.id === domain.id
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-                onClick={() => setSelectedDomain(domain)}
-              >
-                <div className="flex items-center space-x-2">
-                  {domain.hasLibraryItems && <BookOpen className="h-4 w-4" />}
-                  {domain.hasLabComponents && <Package className="h-4 w-4" />}
-                  <span>{domain.name}</span>
+      {/* Role Selection - Show when faculty has multiple roles and no role is selected */}
+      {hasMultipleRoles && !selectedRole && (
+        <div className="space-y-6">
+          <div className="text-center">
+            
+            <p className="text-gray-600">Choose which coordinator role you want to manage</p>
                 </div>
+
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
+
+        <Card 
+              className="cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 hover:bg-blue-50 hover:border-blue-300"
+              onClick={() => setSelectedRole('library')}
+            >
+              <CardContent className="p-8 text-center">
+                <BookOpen className="h-16 w-16 text-blue-600 mx-auto mb-4" />
+                <h3 className="text-2xl font-bold text-gray-900 mb-2">Library Coordinator</h3>
+                <p className="text-gray-600 mb-4">Manage library items, requests, and inventory</p>
+                <div className="flex items-center justify-center space-x-2 text-sm text-gray-500">
+                  <Package className="h-4 w-4" />
+                  <span>Library Management</span>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card 
+              className="cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 hover:bg-green-50 hover:border-green-300"
+              onClick={() => setSelectedRole('lab')}
+            >
+              <CardContent className="p-8 text-center">
+                <Package className="h-16 w-16 text-green-600 mx-auto mb-4" />
+                <h3 className="text-2xl font-bold text-gray-900 mb-2">Lab Coordinator</h3>
+                <p className="text-gray-600 mb-4">Manage lab components, requests, and inventory</p>
+                <div className="flex items-center justify-center space-x-2 text-sm text-gray-500">
+                  <Package className="h-4 w-4" />
+                  <span>Lab Components Management</span>
+            </div>
+          </CardContent>
+        </Card>
+          </div>
+        </div>
+      )}
+
+      {/* Role Selection Buttons - Show when role is selected to allow switching */}
+      {hasMultipleRoles && selectedRole && (
+        <div className="flex flex-wrap gap-4">
+          <Button
+            variant={selectedRole === 'library' ? 'default' : 'outline'}
+            onClick={() => setSelectedRole('library')}
+            className="flex items-center space-x-2"
+          >
+            <BookOpen className="h-4 w-4" />
+            <span>Library Coordinator</span>
+          </Button>
+          <Button
+            variant={selectedRole === 'lab' ? 'default' : 'outline'}
+            onClick={() => setSelectedRole('lab')}
+            className="flex items-center space-x-2"
+          >
+            <Package className="h-4 w-4" />
+            <span>Lab Coordinator</span>
+          </Button>
+            </div>
+
+      )}
+
+      {/* Role-Specific Dashboard Content */}
+      {selectedRole && (
+        <>
+
+
+          {/* Debug Information for Lab Coordinators */}
+          {/* Removed debug card as per user request */}
+
+          {/* Clickable Summary Cards with Hover Effects */}
+          {/* Dashboard Horizontal Pill Cards for Library and Lab Coordinators */}
+          {(selectedRole === 'library' && isLibraryCoordinator) || (selectedRole === 'lab' && isLabCoordinator) ? (
+            <div className="flex flex-row gap-6 justify-center items-center my-6">
+              <button
+                className={`flex flex-col items-center justify-center px-8 py-6 rounded-2xl border transition-all duration-200 shadow-sm min-w-[220px] max-w-[260px] h-[110px] text-center select-none
+                  ${activeTab === 'analytics' ? 'border-purple-500 bg-purple-50 ring-2 ring-purple-400 text-purple-600' : 'border-gray-200 hover:border-purple-300 hover:bg-purple-50 bg-white text-gray-800'}`}
+                onClick={() => setActiveTab('analytics')}
+              >
+                <BarChart3 className={`h-6 w-6 mb-1 ${activeTab === 'analytics' ? 'text-purple-600' : 'text-purple-400'}`} />
+                <span className={`text-base font-medium ${activeTab === 'analytics' ? 'text-purple-600' : 'text-gray-800'}`}>Analytics</span>
               </button>
-            ))}
-          </nav>
-        </div>
-      )}
+              <button
+                className={`flex flex-col items-center justify-center px-8 py-6 rounded-2xl border transition-all duration-200 shadow-sm min-w-[220px] max-w-[260px] h-[110px] text-center select-none
+                  ${activeTab === 'collection' ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-400 text-blue-600' : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50 bg-white text-gray-800'}`}
+                onClick={() => setActiveTab('collection')}
+              >
+                <CheckCircle className={`h-6 w-6 mb-1 ${activeTab === 'collection' ? 'text-blue-600' : 'text-blue-400'}`} />
+                <span className={`text-base font-medium ${activeTab === 'collection' ? 'text-blue-600' : 'text-gray-800'}`}>Awaiting Collection</span>
+              </button>
+              <button
+                className={`flex flex-col items-center justify-center px-8 py-6 rounded-2xl border transition-all duration-200 shadow-sm min-w-[220px] max-w-[260px] h-[110px] text-center select-none
+                  ${activeTab === 'returns' ? 'border-green-500 bg-green-50 ring-2 ring-green-400 text-green-600' : 'border-gray-200 hover:border-green-300 hover:bg-green-50 bg-white text-gray-800'}`}
+                onClick={() => setActiveTab('returns')}
+              >
+                <Package className={`h-6 w-6 mb-1 ${activeTab === 'returns' ? 'text-green-600' : 'text-green-400'}`} />
+                <span className={`text-base font-medium ${activeTab === 'returns' ? 'text-green-600' : 'text-gray-800'}`}>Active Loans</span>
+              </button>
+              <button
+                className={`flex flex-col items-center justify-center px-8 py-6 rounded-2xl border transition-all duration-200 shadow-sm min-w-[220px] max-w-[260px] h-[110px] text-center select-none
+                  ${activeTab === 'history' ? 'border-orange-500 bg-orange-50 ring-2 ring-orange-400 text-orange-600' : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50 bg-white text-gray-800'}`}
 
-      {/* Show current domain info for single domain or selected domain */}
-      {(coordinatorDomains.length === 1 || selectedDomain) && (
-        <div className="text-sm text-gray-600">
-          Coordinating: {selectedDomain?.name || coordinatorDomains[0]?.name}
-          {(selectedDomain?.hasLibraryItems || coordinatorDomains[0]?.hasLibraryItems) && 
-           (selectedDomain?.hasLabComponents || coordinatorDomains[0]?.hasLabComponents) && (
-            <span className="ml-2">
-              (Library & Lab)
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Clickable Summary Cards with Hover Effects */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        <Card 
-          className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 hover:bg-purple-100 hover:border-purple-300 ${
-            activeTab === 'analytics' ? 'ring-2 ring-purple-500 bg-purple-50 border-purple-200' : 'hover:ring-1 hover:ring-purple-200'
-          }`}
-          onClick={() => setActiveTab('analytics')}
-        >
-          <CardContent className="p-4">
-            <div className="flex items-center justify-center space-x-2">
-              <BarChart3 className={`h-5 w-5 transition-colors duration-200 ${
-                activeTab === 'analytics' ? 'text-purple-600' : 'text-purple-500 group-hover:text-purple-700'
-              }`} />
-              <p className={`text-lg font-medium transition-colors duration-200 ${
-                activeTab === 'analytics' ? 'text-purple-600' : 'text-gray-600'
-              }`}>Analytics</p>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card 
-          className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 hover:bg-blue-100 hover:border-blue-300 ${
-            activeTab === 'collection' ? 'ring-2 ring-blue-500 bg-blue-50 border-blue-200' : 'hover:ring-1 hover:ring-blue-200'
-          }`}
-          onClick={() => setActiveTab('collection')}
-        >
-          <CardContent className="p-4">
-            <div className="flex items-center justify-center space-x-2">
-              <CheckCircle className={`h-5 w-5 transition-colors duration-200 ${
-                activeTab === 'collection' ? 'text-blue-600' : 'text-blue-500 group-hover:text-blue-700'
-              }`} />
-              <p className={`text-lg font-medium transition-colors duration-200 ${
-                activeTab === 'collection' ? 'text-blue-600' : 'text-gray-600'
-              }`}>Awaiting Collection</p>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card 
-          className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 hover:bg-green-100 hover:border-green-300 ${
-            activeTab === 'returns' ? 'ring-2 ring-green-500 bg-green-50 border-green-200' : 'hover:ring-1 hover:ring-green-200'
-          }`}
-          onClick={() => setActiveTab('returns')}
-        >
-          <CardContent className="p-4">
-            <div className="flex items-center justify-center space-x-2">
-              <Package className={`h-5 w-5 transition-colors duration-200 ${
-                activeTab === 'returns' ? 'text-green-600' : 'text-green-500 group-hover:text-green-700'
-              }`} />
-              <p className={`text-lg font-medium transition-colors duration-200 ${
-                activeTab === 'returns' ? 'text-green-600' : 'text-gray-600'
-              }`}>Active Loans</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card 
-          className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 hover:bg-indigo-100 hover:border-indigo-300 ${
-            activeTab === 'internships' ? 'ring-2 ring-indigo-500 bg-indigo-50 border-indigo-200' : 'hover:ring-1 hover:ring-indigo-200'
-          }`}
-          onClick={() => setActiveTab('internships')}
-        >
-          <CardContent className="p-4">
-            <div className="flex items-center justify-center space-x-2">
-              <Briefcase className={`h-5 w-5 transition-colors duration-200 ${
-                activeTab === 'internships' ? 'text-indigo-600' : 'text-indigo-500 group-hover:text-indigo-700'
-              }`} />
-              <p className={`text-lg font-medium transition-colors duration-200 ${
-                activeTab === 'internships' ? 'text-indigo-600' : 'text-gray-600'
-              }`}>Internships</p>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card 
-          className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 hover:bg-orange-100 hover:border-orange-300 ${
-            activeTab === 'history' ? 'ring-2 ring-orange-500 bg-orange-50 border-orange-200' : 'hover:ring-1 hover:ring-orange-200'
-          }`}
           onClick={() => setActiveTab('history')}
         >
-          <CardContent className="p-4">
-            <div className="flex items-center justify-center space-x-2">
-              <Clock className={`h-5 w-5 transition-colors duration-200 ${
-                activeTab === 'history' ? 'text-orange-600' : 'text-orange-500 group-hover:text-orange-700'
-              }`} />
-              <p className={`text-lg font-medium transition-colors duration-200 ${
-                activeTab === 'history' ? 'text-orange-600' : 'text-gray-600'
-              }`}>History</p>
+                <Clock className={`h-6 w-6 mb-1 ${activeTab === 'history' ? 'text-orange-600' : 'text-orange-400'}`} />
+                <span className={`text-base font-medium ${activeTab === 'history' ? 'text-orange-600' : 'text-gray-800'}`}>History</span>
+              </button>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+          ) : null}
 
-      {/* Dynamic Content Based on Selected Tab */}
-      {activeTab === 'analytics' && (
+          {/* Dashboard Tabs - removed as per user request, navigation is now only via cards */}
+
+          {/* Tab Content */}
+          {activeTab === 'analytics' && selectedRole && (
         <div className="space-y-4">
-          <h2 className="text-xl font-semibold">Analytics Dashboard</h2>
-          <p className="text-gray-600">Insights and statistics for your coordinator domains</p>
+              <h2 className="text-xl font-semibold">{roleName} Analytics Dashboard</h2>
+              
           
-          {/* Analytics Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Requests</CardTitle>
-                <TrendingUp className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{componentRequests.length + libraryRequests.length}</div>
-                <p className="text-xs text-muted-foreground">
-                  Library: {libraryRequests.length} | Lab: {componentRequests.length}
-                </p>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Active Items</CardTitle>
-                <Package className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{returnComponentRequests.length + returnLibraryRequests.length}</div>
-                <p className="text-xs text-muted-foreground">
-                  Currently borrowed items
-                </p>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Overdue Items</CardTitle>
-                <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-red-600">
-                  {[...returnComponentRequests, ...returnLibraryRequests].filter(req => isOverdue(req.due_date)).length}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Items past due date
-                </p>
-              </CardContent>
-            </Card>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Internship Projects</CardTitle>
-                <Briefcase className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{internshipProjects.length}</div>
-                <p className="text-xs text-muted-foreground">
-                  Active internship projects
-                </p>
-              </CardContent>
-            </Card>
+          {/* Minimal Stat Cards Row - outside the graph section */}
+          <div className="flex flex-row flex-wrap gap-2 mb-2 justify-center">
+            <div className="flex-1 min-w-[100px] max-w-[140px] bg-white rounded shadow-sm px-2 py-1 flex flex-col items-center justify-center text-center border border-gray-200">
+              <div className="text-xs text-gray-500 font-medium mb-0.5">Total Requests</div>
+              <div className="text-lg font-bold leading-tight">{requests.length}</div>
+            </div>
+            <div className="flex-1 min-w-[100px] max-w-[140px] bg-white rounded shadow-sm px-2 py-1 flex flex-col items-center justify-center text-center border border-gray-200">
+              <div className="text-xs text-gray-500 font-medium mb-0.5">Active Loans</div>
+              <div className="text-lg font-bold leading-tight">{returnRequests.length}</div>
+            </div>
+            <div className="flex-1 min-w-[100px] max-w-[140px] bg-white rounded shadow-sm px-2 py-1 flex flex-col items-center justify-center text-center border border-gray-200">
+              <div className="text-xs text-gray-500 font-medium mb-0.5">Overdue</div>
+              <div className="text-lg font-bold leading-tight text-red-600">{returnRequests.filter(req => isOverdue(req.due_date)).length}</div>
+            </div>
           </div>
+          {/* Request Status Overview - Only the graph in the card, no extra border or div below */}
+          <div className="bg-white shadow rounded-t-lg px-4 pt-4 pb-2">
+            <div>
+              <StatusBarChart
+                title={''}
+                data={[
+                  { label: 'Pending', count: pendingRequests.length, color: '#FFC107' },
+                  { label: 'Awaiting', count: collectionRequests.length, color: '#2196F3' },
+                  { label: 'Collected', count: returnRequests.length, color: '#4CAF50' },
+                  { label: 'Returned', count: requests.filter(req => req.status === "RETURNED").length, color: '#757575' },
+                  { label: 'Rejected', count: requests.filter(req => req.status === "REJECTED").length, color: '#F44336' },
+                ]}
+              />
+            </div>
 
-          {/* Request Status Distribution */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Request Status Overview</CardTitle>
-              <CardDescription>Distribution of all requests by status</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {[
-                  { status: 'PENDING', count: pendingComponentRequests.length + pendingLibraryRequests.length, color: 'bg-yellow-500' },
-                  { status: 'APPROVED', count: collectionComponentRequests.length + collectionLibraryRequests.length, color: 'bg-blue-500' },
-                  { status: 'COLLECTED', count: returnComponentRequests.length + returnLibraryRequests.length, color: 'bg-green-500' },
-                  { status: 'RETURNED', count: [...componentRequests, ...libraryRequests].filter(req => req.status === "RETURNED").length, color: 'bg-gray-500' },
-                  { status: 'REJECTED', count: [...componentRequests, ...libraryRequests].filter(req => req.status === "REJECTED").length, color: 'bg-red-500' },
-                ].map(({ status, count, color }) => (
-                  <div key={status} className="flex items-center justify-between">
-                    <div className="text-sm font-medium text-gray-700 capitalize">{status}</div>
-                    <div className="w-full bg-gray-200 rounded-full h-2.5 mx-3">
-                      <div className={`h-2.5 rounded-full ${color}`} style={{ width: `${(count / (componentRequests.length + libraryRequests.length)) * 100}%` }}></div>
-                    </div>
-                    <div className="text-sm font-medium text-gray-700">{count}</div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+          </div>
         </div>
       )}
 
-      {activeTab === 'collection' && (
+          {activeTab === 'collection' && selectedRole && (
         <div className="space-y-4">
-          <h2 className="text-xl font-semibold">Collection Management</h2>
-          <p className="text-gray-600">Verify if students have collected their approved items</p>
-          
-          {[...collectionComponentRequests, ...collectionLibraryRequests].map((request) => (
+              <h2 className="text-xl font-semibold">{roleName} Collection Management</h2>
+              
+              
+              {collectionRequests.length === 0 ? (
+                <Card>
+                  <CardContent className="p-8 text-center">
+                    <CheckCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No items awaiting collection</h3>
+                    <p className="text-gray-600">All approved {roleName.toLowerCase()} items have been collected.</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                collectionRequests.map((request) => (
             <Card key={request.id} className="border-l-4 border-l-blue-400">
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -852,413 +1013,506 @@ export function CoordinatorDashboard() {
                   </CardTitle>
                   {getStatusBadge(request.status)}
                 </div>
-                <CardDescription>
-                  Domain: {getDomainName(request)}
-                </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+                    <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
+                        <div>
+                          <h4 className="font-medium text-gray-900 mb-2">Requester Details</h4>
+                          <div className="space-y-1 text-sm">
                     <div className="flex items-center space-x-2">
                       <User className="h-4 w-4 text-gray-500" />
-                      <span className="font-medium">
-                        {request.student?.user?.name || request.faculty?.user?.name || "Unknown User"}
-                      </span>
+                              <span>{getRequesterName(request)}</span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <Mail className="h-4 w-4 text-gray-500" />
+                              <span>{getRequesterEmail(request)}</span>
                     </div>
                     <div className="flex items-center space-x-2">
                       <FileText className="h-4 w-4 text-gray-500" />
-                      <span className="text-sm text-gray-600">
-                        {request.student?.student_id ? `SRN: ${request.student.student_id}` : "Faculty Request"}
-                      </span>
+                              <span>{getRequesterType(request)}</span>
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center space-x-2">
-                      <Package className="h-4 w-4 text-gray-500" />
-                      <span className="text-sm">Quantity: {request.quantity}</span>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <Calendar className="h-4 w-4 text-gray-500" />
-                      <span className="text-sm">Required: {new Date(request.required_date).toLocaleDateString()}</span>
+                        
+                        <div>
+                          <h4 className="font-medium text-gray-900 mb-2">Request Details</h4>
+                          <div className="space-y-1 text-sm">
+                            <div>Quantity: {request.quantity}</div>
+                            <div>Purpose: {request.purpose}</div>
+                            <div>Request Date: {new Date(request.request_date).toLocaleDateString()}</div>
+                            <div>Required Date: {new Date(request.required_date).toLocaleDateString()}</div>
                     </div>
                   </div>
                 </div>
 
-                <div className="flex space-x-2">
+                      <div className="mt-4 flex space-x-2">
                   <Button 
-                    size="sm" 
-                    variant="outline" 
-                    className="text-red-600"
                     onClick={() => {
-                      if (isComponentRequest(request)) {
-                        handleUpdateComponentRequest(request.id, "REJECTED", "Student did not collect item")
+                            if (selectedRole === 'library') {
+                              handleUpdateLibraryRequest(request.id, "COLLECTED")
                       } else {
-                        handleUpdateLibraryRequest(request.id, "REJECTED", "Student did not collect item")
+                              handleMarkAsCollected(request)
                       }
                     }}
+                          className="bg-green-600 hover:bg-green-700"
                   >
-                    <XCircle className="h-4 w-4 mr-1" />
-                    Not Collected
+                          <CheckCircle className="h-4 w-4 mr-2" />
+                          Mark as Collected
                   </Button>
                   
                   <Button 
-                    size="sm"
+                          variant="outline"
                     onClick={() => {
-                      if (isComponentRequest(request)) {
-                        handleUpdateComponentRequest(request.id, "COLLECTED")
+                            if (selectedRole === 'library') {
+                              handleUpdateLibraryRequest(request.id, "REJECTED")
                       } else {
-                        handleUpdateLibraryRequest(request.id, "COLLECTED")
+                              handleUpdateComponentRequest(request.id, "REJECTED")
                       }
                     }}
+                          className="text-red-600 border-red-200 hover:bg-red-50"
                   >
-                    <CheckCircle className="h-4 w-4 mr-1" />
-                    Collected
+                          <XCircle className="h-4 w-4 mr-2" />
+                          Reject Request
                   </Button>
                 </div>
               </CardContent>
             </Card>
-          ))}
-
-          {collectionComponentRequests.length === 0 && collectionLibraryRequests.length === 0 && (
-            <Card>
-              <CardContent className="p-8 text-center">
-                <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No items awaiting collection</h3>
-                <p className="text-gray-600">All approved items have been collected.</p>
-              </CardContent>
-            </Card>
+                ))
+              )}
+            </div>
           )}
-        </div>
-      )}
 
-      {activeTab === 'returns' && (
+          {activeTab === 'returns' && selectedRole && (
         <div className="space-y-4">
-          {[...returnComponentRequests, ...returnLibraryRequests].length === 0 ? (
-            <Card>
-              <CardContent className="p-8 text-center">
-                <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No active loans</h3>
-                <p className="text-gray-600">All items have been returned.</p>
-              </CardContent>
-            </Card>
-          ) : (
+              {/* Define filteredActiveLoans here */}
+              {(() => {
+                let activeLoans = returnRequests;
+                // --- Filtering Logic for Active Loans ---
+                if (searchTerm.trim() !== "") {
+                  const lower = searchTerm.toLowerCase();
+                  activeLoans = activeLoans.filter(request => {
+                    const name = getRequesterName(request).toLowerCase();
+                    const srn = request.student?.student_id?.toLowerCase?.() || "";
+                    const item = getItemName(request).toLowerCase();
+                    return name.includes(lower) || srn.includes(lower) || item.includes(lower);
+                  });
+                }
+                if (activeFilter === "due") {
+                  activeLoans = activeLoans.filter(request => isOverdue(request.due_date));
+                } else if (activeFilter === "not-due") {
+                  activeLoans = activeLoans.filter(request => !isOverdue(request.due_date));
+                } else if (activeFilter === "student") {
+                  activeLoans = activeLoans.filter(request => request.student);
+                } else if (activeFilter === "faculty") {
+                  activeLoans = activeLoans.filter(request => !request.student);
+                }
+                const filteredActiveLoans = activeLoans;
+                const hasAnyLoans = returnRequests.length > 0;
+
+                if (!hasAnyLoans) {
+                  return (
+                    <Card>
+                      <CardContent className="p-8 text-center">
+                        <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                        <h3 className="text-lg font-medium text-gray-900 mb-2">No active {roleName.toLowerCase()} loans</h3>
+                        <p className="text-gray-600">All {roleName.toLowerCase()} items have been returned.</p>
+                      </CardContent>
+                    </Card>
+                  );
+                }
+
+                const activeLoansRowsPerPage = 8;
+                const activeLoansTotalPages = Math.ceil(filteredActiveLoans.length / activeLoansRowsPerPage);
+                const paginatedActiveLoans = filteredActiveLoans.slice((activeLoansPage - 1) * activeLoansRowsPerPage, activeLoansPage * activeLoansRowsPerPage);
+
+                return (
+                  <div className="space-y-4">
+                    <h2 className="text-xl font-semibold">{roleName} Active Loans</h2>
+                    {/* Search and Filter Bar */}
+                    <div className="flex items-center space-x-4 mb-4">
+                      <div className="flex items-center space-x-2">
+                        <Search className="h-4 w-4 text-gray-500" />
+                        <Input
+                          placeholder="Search by name or item..."
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          className="max-w-sm"
+                        />
+                      </div>
+                      
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="sm" className="flex items-center space-x-2">
+                            <Filter className="h-4 w-4" />
+                            <span>
+                              {activeFilter === 'all' ? 'All' :
+                               activeFilter === 'due' ? 'Due' :
+                               activeFilter === 'not-due' ? 'Not Due' :
+                               activeFilter === 'student' ? 'Student' :
+                               'Faculty'}
+                            </span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {['all', 'due', 'not-due', 'student', 'faculty'].map((filter) => (
+                            <DropdownMenuItem
+                              key={filter}
+                              onClick={() => setActiveFilter(filter)}
+                              className={activeFilter === filter ? 'bg-gray-100' : ''}
+                            >
+                              {filter === 'all' ? 'All' :
+                               filter === 'due' ? 'Due' :
+                               filter === 'not-due' ? 'Not Due' :
+                               filter === 'student' ? 'Student' :
+                               'Faculty'}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+
+                    <Card>
+                      <CardContent className="p-0">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="text-left text-black font-bold">Borrower</TableHead>
+                              <TableHead className="text-left text-black font-bold">{roleName} Item</TableHead>
+                              <TableHead className="text-center text-black font-bold">Qty</TableHead>
+                              <TableHead className="text-center text-black font-bold">Status</TableHead>
+                              <TableHead className="text-center text-black font-bold">Collected</TableHead>
+                              <TableHead className="text-center text-black font-bold">Due Date</TableHead>
+                              <TableHead className="text-center text-black font-bold">Fine</TableHead>
+                              <TableHead className="text-center text-black font-bold">Actions</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {paginatedActiveLoans.length === 0 ? (
+                              <TableRow>
+                                <TableCell colSpan={8} className="text-center py-8 text-gray-500">
+                                  No results found for the current search/filter.
+                                </TableCell>
+                              </TableRow>
+                            ) : (
+                              paginatedActiveLoans.map((request) => {
+                                const overdue = isOverdue(request.due_date)
+                                const daysOverdue = getDaysOverdue(request.due_date)
+                                const borrower = request.student?.user?.name || request.faculty?.user?.name || "Unknown"
+                                const borrowerId = request.student?.student_id || "Faculty"
+                                return (
+                                  <TableRow key={request.id} className="hover:bg-gray-50">
+                                    <TableCell className="font-medium text-sm text-left">
+                                      <div>
+                                        <div className="font-medium text-sm">{borrower}</div>
+                                        <div className="text-xs text-gray-500">
+                                          {request.student ? `SRN: ${borrowerId}` : 'Faculty'}
+                                        </div>
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="font-medium text-sm text-left">{getItemName(request)}</TableCell>
+                                    <TableCell className="text-sm font-medium text-center">{request.quantity}</TableCell>
+                                    <TableCell className="text-center">
+                                      {overdue ? (
+                                        <Badge className="bg-red-100 text-red-800 font-medium">
+                                          Due
+                                        </Badge>
+                                      ) : (
+                                        <Badge className="bg-yellow-100 text-yellow-800 font-medium">
+                                          Not Due
+                                        </Badge>
+                                      )}
+                                    </TableCell>
+                                    <TableCell className="text-sm text-center">
+                                      <span className="text-sm">
+                                        {request.collection_date ? new Date(request.collection_date).toLocaleDateString() : "-"}
+                                      </span>
+                                    </TableCell>
+                                    <TableCell className="text-sm text-center">
+                                      <span className={`text-sm ${overdue ? 'text-red-600 font-medium' : ''}`}>
+                                        {request.due_date ? new Date(request.due_date).toLocaleDateString() : "-"}
+                                      </span>
+                                      {overdue && (
+                                        <div className="text-xs text-red-600">
+                                          {daysOverdue} days late
+                                        </div>
+                                      )}
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                      {request.fine_amount && request.fine_amount > 0 ? (
+                                        <div className="text-sm">
+                                          <span className="text-red-600">₹{request.fine_amount}</span>
+                                          <div className="text-xs text-gray-500">
+                                            {request.fine_paid ? "Paid" : "Pending"}
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <span className="text-sm text-gray-400">-</span>
+                                      )}
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                      <div className="flex justify-center items-center space-x-1">
+                                        {request.status === "COLLECTED" && (
+                                          <>
+                                            <Button 
+                                              size="sm"
+                                              variant="outline"
+                                              className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                                              onClick={() => {
+                                                const daysLeft = request.due_date ? Math.ceil((new Date(request.due_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)) : null;
+                                                const isOverdue = daysLeft !== null && daysLeft < 0;
+                                                if (selectedRole === 'lab') {
+                                                  if (isOverdue) {
+                                                    toast({
+                                                      title: "Cannot renew overdue items",
+                                                      description: "This item is already overdue.",
+                                                      variant: "destructive",
+                                                    });
+                                                    return;
+                                                  }
+                                                  if (daysLeft !== null && daysLeft > 3) {
+                                                    toast({
+                                                      title: "Renewal not allowed yet",
+                                                      description: `Due date is already set to ${request.due_date ? new Date(request.due_date).toLocaleDateString() : '-'}`,
+                                                      variant: "default",
+                                                    });
+                                                    return;
+                                                  }
+                                                }
+                                                handleRenewRequest(request.id, request.due_date);
+                                              }}
+                                            >
+                                              <RefreshCw className="h-3 w-3 mr-1" />
+                                              Renew
+                                            </Button>
+                                            <Button
+                                              size="sm"
+                                              className="bg-zinc-900 hover:bg-zinc-800 text-white"
+                                              onClick={() => selectedRole === 'library' ? handleUpdateLibraryRequest(request.id, "RETURNED") : handleUpdateComponentRequest(request.id, "RETURNED")}
+                                            >
+                                              <CheckCircle className="h-3 w-3 mr-1" />
+                                              Mark as Returned
+                                            </Button>
+                                          </>
+                                        )}
+                                        {request.status === "USER_RETURNED" && (
+                                          <Button 
+                                            size="sm"
+                                            className="bg-green-600 hover:bg-green-700"
+                                            onClick={() => {
+                                              if (selectedRole === 'library') {
+                                                handleUpdateLibraryRequest(request.id, "RETURNED")
+                                              } else {
+                                                handleUpdateComponentRequest(request.id, "RETURNED")
+                                              }
+                                            }}
+                                          >
+                                            <CheckCircle className="h-3 w-3 mr-1" />
+                                            Confirm Return
+                                          </Button>
+                                        )}
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                )
+                              })
+                            )}
+                          </TableBody>
+                        </Table>
+                      </CardContent>
+                    </Card>
+                    {/* Pagination Controls for Active Loans */}
+                    <div className="flex justify-between items-center p-2 border-t bg-gray-50">
+                      <button
+                        className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50"
+                        onClick={() => setActiveLoansPage((p) => Math.max(1, p - 1))}
+                        disabled={activeLoansPage === 1}
+                      >
+                        Previous
+                      </button>
+                      <span className="text-xs text-gray-600">
+                        Page {activeLoansPage} of {activeLoansTotalPages}
+                      </span>
+                      <button
+                        className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50"
+                        onClick={() => setActiveLoansPage((p) => Math.min(activeLoansTotalPages, p + 1))}
+                        disabled={activeLoansPage === activeLoansTotalPages}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {activeTab === 'history' && selectedRole && (
             <div className="space-y-4">
-              {/* Search and Filter Bar */}
-              <div className="flex items-center space-x-4">
+              <h2 className="text-xl font-semibold">{roleName} Request History</h2>
+              <div className="flex items-center space-x-4 mb-4">
                 <div className="flex items-center space-x-2">
                   <Search className="h-4 w-4 text-gray-500" />
                   <Input
-                    placeholder="Search by borrower name, SRN, or book name..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Search by borrower, item, or SRN..."
+                    value={historySearchTerm}
+                    onChange={(e) => setHistorySearchTerm(e.target.value)}
                     className="max-w-sm"
                   />
                 </div>
-                
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="sm" className="flex items-center space-x-2">
                       <Filter className="h-4 w-4" />
                       <span>
-                        {statusFilter === "all" ? "All Status" : 
-                         statusFilter === "due" ? "Due Only" : 
-                         "Not Due Only"}
+                        {historyFilter === 'all' ? 'All' :
+                          historyFilter === 'due' ? 'Due' :
+                          historyFilter === 'not-due' ? 'Not Due' :
+                          historyFilter === 'student' ? 'Student' :
+                          'Faculty'}
                       </span>
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem 
-                      onClick={() => setStatusFilter("all")}
-                      className={statusFilter === "all" ? "bg-gray-100" : ""}
-                    >
-                      All Status
-                    </DropdownMenuItem>
-                    <DropdownMenuItem 
-                      onClick={() => setStatusFilter("due")}
-                      className={statusFilter === "due" ? "bg-gray-100" : ""}
-                    >
-                      Due Only
-                    </DropdownMenuItem>
-                    <DropdownMenuItem 
-                      onClick={() => setStatusFilter("not-due")}
-                      className={statusFilter === "not-due" ? "bg-gray-100" : ""}
-                    >
-                      Not Due Only
-                    </DropdownMenuItem>
+                    {['all', 'due', 'not-due', 'student', 'faculty'].map((filter) => (
+                      <DropdownMenuItem
+                        key={filter}
+                        onClick={() => setHistoryFilter(filter)}
+                        className={historyFilter === filter ? 'bg-gray-100' : ''}
+                      >
+                        {filter === 'all' ? 'All' :
+                          filter === 'due' ? 'Due' :
+                          filter === 'not-due' ? 'Not Due' :
+                          filter === 'student' ? 'Student' :
+                          'Faculty'}
+                      </DropdownMenuItem>
+                    ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
 
-              <Card>
-                <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-[250px]">Borrower</TableHead>
-                        <TableHead className="w-[200px]">Item</TableHead>
-                        <TableHead className="w-[80px]">Qty</TableHead>
-                        <TableHead className="w-[120px]">Status</TableHead>
-                        <TableHead className="w-[100px]">Collected</TableHead>
-                        <TableHead className="w-[100px]">Due Date</TableHead>
-                        <TableHead className="w-[100px]">Fine</TableHead>
-                        <TableHead className="w-[200px]">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredActiveLoans.map((request) => {
-                        const overdue = isOverdue(request.due_date)
-                        const daysOverdue = getDaysOverdue(request.due_date)
-                        const borrower = request.student?.user?.name || "Unknown"
-                        const borrowerId = request.student?.student_id || "N/A"
-                        
-                        return (
-                          <TableRow key={request.id} className="hover:bg-gray-50">
-                            <TableCell>
-                              <div>
-                                <div className="font-medium text-sm">{borrower}</div>
-                                <div className="text-xs text-gray-500">
-                                  SRN: {borrowerId}
-                                </div>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="font-medium text-sm">{getItemName(request)}</div>
-                            </TableCell>
-                            <TableCell>
-                              <span className="text-sm font-medium">{request.quantity}</span>
-                            </TableCell>
-                            <TableCell>
-                              {overdue ? (
-                                <Badge className="bg-red-100 text-red-800 font-medium">
-                                  Due
-                                </Badge>
-                              ) : (
-                                <Badge className="bg-yellow-100 text-yellow-800 font-medium">
-                                  Not Due
-                                </Badge>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <span className="text-sm">
-                                {request.collection_date ? new Date(request.collection_date).toLocaleDateString() : "-"}
-                              </span>
-                            </TableCell>
-                            <TableCell>
-                              <span className={`text-sm ${overdue ? 'text-red-600 font-medium' : ''}`}>
-                                {request.due_date ? new Date(request.due_date).toLocaleDateString() : "-"}
-                              </span>
-                              {overdue && (
-                                <div className="text-xs text-red-600">
-                                  {daysOverdue} days late
-                                </div>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              {request.fine_amount && request.fine_amount > 0 ? (
-                                <div className="text-sm">
-                                  <span className="text-red-600">₹{request.fine_amount}</span>
-                                  <div className="text-xs text-gray-500">
-                                    {request.fine_paid ? "Paid" : "Pending"}
-                                  </div>
-                                </div>
-                              ) : (
-                                <span className="text-sm text-gray-400">-</span>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex space-x-1">
-                                <Button 
-                                  size="sm"
-                                  variant="outline"
-                                  className="text-blue-600 border-blue-200 hover:bg-blue-50"
-                                  onClick={() => handleRenewRequest(request.id)}
-                                >
-                                  <RefreshCw className="h-3 w-3 mr-1" />
-                                  Renew
-                                </Button>
-                                
-                                {request.status === "PENDING_RETURN" && request.fine_amount && request.fine_amount > 0 ? (
-                                  <Button 
-                                    size="sm"
-                                    onClick={() => {
-                                      if (isComponentRequest(request)) {
-                                        handleUpdateComponentRequest(request.id, "RETURNED", undefined, true)
-                                      } else {
-                                        handleUpdateLibraryRequest(request.id, "RETURNED", undefined, true)
-                                      }
-                                    }}
-                                  >
-                                    <CheckCircle className="h-3 w-3 mr-1" />
-                                    Return
-                                  </Button>
-                                ) : (
-                                  <Button 
-                                    size="sm"
-                                    onClick={() => {
-                                      if (isComponentRequest(request)) {
-                                        handleUpdateComponentRequest(request.id, "RETURNED")
-                                      } else {
-                                        handleUpdateLibraryRequest(request.id, "RETURNED")
-                                      }
-                                    }}
-                                  >
-                                    <CheckCircle className="h-3 w-3 mr-1" />
-                                    Return
-                                  </Button>
-                                )}
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        )
-                      })}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
+              <HistoryTable data={historyRequests} roleName={roleName} searchTerm={historySearchTerm} filter={historyFilter} isOverdue={isOverdue} />
             </div>
           )}
-        </div>
-      )}
+        </>
 
-      {activeTab === 'internships' && (
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold">Internship Management</h2>
-          <p className="text-gray-600">Manage your internship projects and student applications</p>
-          
-          {internshipProjects.length === 0 ? (
-            <Card>
-              <CardContent className="p-8 text-center">
-                <Briefcase className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No internship projects assigned</h3>
-                <p className="text-gray-600">You have not been assigned any internship projects yet.</p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-6">
-              {internshipProjects.map((internship) => (
-                <Card key={internship.id} className="border-l-4 border-l-indigo-400">
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-lg">{internship.title}</CardTitle>
-                      <div className="flex items-center space-x-2">
-                        {getInternshipStatusBadge(internship.status)}
-                        {!internship.isAccepted && (
-                          <Button 
-                            size="sm"
-                            onClick={() => acceptInternshipProject(internship.id)}
-                          >
-                            Accept Project
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                    <CardDescription>
-                      <div className="flex items-center space-x-4">
-                        <span>Duration: {internship.duration}</span>
-                        <span>•</span>
-                        <span>Slots: {internship.slots}</span>
-                        <span>•</span>
-                        <span>
-                          {new Date(internship.startDate).toLocaleDateString()} - {new Date(internship.endDate).toLocaleDateString()}
-                        </span>
-                      </div>
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div>
-                      <h4 className="font-medium mb-2">Description</h4>
-                      <p className="text-sm text-gray-600">{internship.description}</p>
-                    </div>
-                    
-                    <div>
-                      <h4 className="font-medium mb-2">Required Skills</h4>
-                      <p className="text-sm text-gray-600">{internship.skills}</p>
-                    </div>
-
-                    {internship.isAccepted && (
-                      <div>
-                        <div className="flex items-center justify-between mb-4">
-                          <h4 className="font-medium">Student Applications</h4>
-                          <Button 
-                            size="sm" 
-                            variant="outline"
-                            onClick={() => fetchInternshipApplications(internship.id)}
-                          >
-                            <RefreshCw className="h-4 w-4 mr-1" />
-                            Refresh
-                          </Button>
-                        </div>
-                        
-                        {(!internship.applications || internship.applications.length === 0) ? (
-                          <div className="text-center py-8">
-                            <Users className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                            <p className="text-sm text-gray-500">No applications yet</p>
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            {internship.applications.map((application) => (
-                              <div key={application.id} className="border rounded-lg p-4">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center space-x-3">
-                                    <Avatar>
-                                      <AvatarFallback>
-                                        {application.student.user.name
-                                          .split(" ")
-                                          .map((n) => n[0])
-                                          .join("")}
-                                      </AvatarFallback>
-                                    </Avatar>
-                                    <div>
-                                      <h5 className="font-medium">{application.student.user.name}</h5>
-                                      <p className="text-sm text-gray-600">SRN: {application.student.student_id}</p>
-                                      <p className="text-sm text-gray-500">
-                                        Applied: {new Date(application.appliedAt).toLocaleDateString()}
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center space-x-2">
-                                    {getApplicationStatusBadge(application.status)}
-                                    {application.status === "PENDING" && (
-                                      <div className="flex space-x-1">
-                                        <Button 
-                                          size="sm"
-                                          variant="outline"
-                                          className="text-red-600"
-                                          onClick={() => handleInternshipApplicationStatus(application.id, "REJECTED", internship.id)}
-                                        >
-                                          <XCircle className="h-4 w-4 mr-1" />
-                                          Reject
-                                        </Button>
-                                        <Button 
-                                          size="sm"
-                                          onClick={() => handleInternshipApplicationStatus(application.id, "ACCEPTED", internship.id)}
-                                        >
-                                          <CheckCircle className="h-4 w-4 mr-1" />
-                                          Accept
-                                        </Button>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {activeTab === 'history' && (
-        <div className="space-y-4">
-          <SimplifiedLibraryManagement />
-        </div>
       )}
     </div>
   )
+}
+
+
+
+type HistoryTableProps = {
+  data: RequestUnion[];
+  roleName: string;
+  searchTerm?: string;
+  filter?: string;
+  isOverdue: (dueDate?: string) => boolean;
+};
+
+function HistoryTable({ data, roleName, searchTerm = "", filter = "all", isOverdue }: HistoryTableProps) {
+  const [page, setPage] = useState<number>(1);
+  const rowsPerPage = 8;
+  const totalPages = Math.ceil(data.length / rowsPerPage);
+  let filteredData = data;
+  if (searchTerm.trim() !== "") {
+    const lower = searchTerm.toLowerCase();
+    filteredData = filteredData.filter(req => {
+      const name = (req as any).student?.user?.name?.toLowerCase?.() || (req as any).requesting_faculty?.user?.name?.toLowerCase?.() || (req as any).faculty?.user?.name?.toLowerCase?.() || "";
+      const srn = (req as any).student?.student_id?.toLowerCase?.() || "";
+      const item = (req as any).component?.component_name?.toLowerCase?.() || (req as any).item?.item_name?.toLowerCase?.() || "";
+      return name.includes(lower) || srn.includes(lower) || item.includes(lower);
+    });
+  }
+  if (filter === "due") {
+    filteredData = filteredData.filter(req => req.due_date && isOverdue(req.due_date));
+  } else if (filter === "not-due") {
+    filteredData = filteredData.filter(req => req.due_date && !isOverdue(req.due_date));
+  } else if (filter === "student") {
+    filteredData = filteredData.filter(req => (req as any).student);
+  } else if (filter === "faculty") {
+    filteredData = filteredData.filter(req => !(req as any).student);
+  }
+  const paginatedData = filteredData.slice((page - 1) * rowsPerPage, page * rowsPerPage);
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'PENDING': return 'text-yellow-600';
+      case 'APPROVED': return 'text-blue-600';
+      case 'COLLECTED': return 'text-green-600';
+      case 'RETURNED': return 'text-gray-600';
+      case 'REJECTED': return 'text-red-600';
+      default: return 'text-gray-500';
+    }
+  };
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+      <table className="min-w-full text-sm">
+        <thead>
+          <tr>
+            <th className="text-left font-bold text-gray-700 px-4 py-3">Borrower</th>
+            <th className="text-left font-bold text-gray-700 px-4 py-3">{roleName === 'Lab' ? 'Lab Item' : 'Item'}</th>
+            <th className="text-left font-bold text-gray-700 px-4 py-3">Qty</th>
+            <th className="text-left font-bold text-gray-700 px-4 py-3">Status</th>
+            <th className="text-left font-bold text-gray-700 px-4 py-3">Collected</th>
+            <th className="text-left font-bold text-gray-700 px-4 py-3">Due Date</th>
+            <th className="text-left font-bold text-gray-700 px-4 py-3">Fine</th>
+          </tr>
+        </thead>
+        <tbody>
+          {paginatedData.length === 0 ? (
+            <tr>
+              <td colSpan={7} className="text-center py-8 text-gray-400">No history found.</td>
+            </tr>
+          ) : (
+            paginatedData.map((req: RequestUnion) => {
+              const borrower = (req as any).student?.user?.name || (req as any).requesting_faculty?.user?.name || (req as any).faculty?.user?.name || 'Unknown';
+              const borrowerId = (req as any).student?.student_id || 'Faculty';
+              const item = (req as any).component?.component_name || (req as any).item?.item_name || '-';
+              const qty = (req as any).quantity;
+              const status = (req as any).status;
+              const collected = (req as any).collection_date ? new Date((req as any).collection_date).toLocaleDateString() : '-';
+              const dueDate = (req as any).due_date ? new Date((req as any).due_date).toLocaleDateString() : '-';
+              const fine = (req as any).fine_amount && (req as any).fine_amount > 0 ? `₹${(req as any).fine_amount}` : '-';
+              return (
+                <tr key={req.id} className="border-t">
+                  <td className="px-4 py-3 align-top truncate">
+                    <div className="font-medium text-sm truncate">{borrower}</div>
+                    <div className="text-xs text-gray-500 truncate">{(req as any).student ? `SRN: ${borrowerId}` : 'Faculty'}</div>
+                  </td>
+                  <td className="px-4 py-3 align-top font-medium text-sm truncate">{item}</td>
+                  <td className="px-4 py-3 align-top text-sm">{qty}</td>
+                  <td className={`px-4 py-3 align-top font-medium text-sm ${getStatusColor(status)}`}>{status}</td>
+                  <td className="px-4 py-3 align-top text-sm whitespace-nowrap">{collected}</td>
+                  <td className="px-4 py-3 align-top text-sm whitespace-nowrap">{dueDate}</td>
+                  <td className="px-4 py-3 align-top text-sm">{fine}</td>
+                </tr>
+              );
+            })
+          )}
+        </tbody>
+      </table>
+      {/* Pagination Controls */}
+      <div className="flex justify-between items-center p-2 border-t bg-gray-50">
+        <button
+          className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50"
+          onClick={() => setPage((p) => Math.max(1, p - 1))}
+          disabled={page === 1}
+        >
+          Previous
+        </button>
+        <span className="text-xs text-gray-600">
+          Page {page} of {totalPages}
+        </span>
+        <button
+          className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50"
+          onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          disabled={page === totalPages}
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
 }

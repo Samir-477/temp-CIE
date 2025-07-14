@@ -48,6 +48,7 @@ export async function GET(request: NextRequest) {
     })
 
     // Get all approved component requests to calculate available quantity
+    // Only count APPROVED and COLLECTED as "in use" - exclude RETURNED and USER_RETURNED components
     const approvedRequests = await prisma.componentRequest.findMany({
       where: {
         status: {
@@ -115,23 +116,19 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const data = await request.json()
-
     // Get user from header
     const userId = request.headers.get("x-user-id")
-    console.log("POST /api/lab-components - Received userId from header:", userId)
-    
-    let userName = "system"
-    if (userId) {
-      const user = await getUserById(userId)
-      console.log("POST /api/lab-components - Retrieved user from getUserById:", user)
-      if (user) {
-        userName = user.name
-        console.log("POST /api/lab-components - Using userName:", userName)
-      }
-    } else {
-      console.log("POST /api/lab-components - No userId in header, using default 'system'")
+    if (!userId) {
+      return NextResponse.json({ error: "User not authenticated" }, { status: 401 })
     }
+    
+      const user = await getUserById(userId)
+    if (!user || (user.role !== "ADMIN" && user.role !== "FACULTY")) {
+      return NextResponse.json({ error: "Access denied - Admin or Faculty only" }, { status: 403 })
+      }
+
+    const data = await request.json()
+    const userName = user.name
 
     console.log("POST /api/lab-components - Final userName being used:", userName)
 

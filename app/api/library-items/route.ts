@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
+import { getUserById } from '@/lib/auth';
 
 // GET: List all library items
 export async function GET(req: NextRequest) {
@@ -16,10 +17,7 @@ export async function GET(req: NextRequest) {
     const items = await prisma.libraryItem.findMany({
       where: whereClause,
       include: {
-        domain: true,
-        faculty: {
-          include: { user: true }
-        }
+        domain: true
       },
       orderBy: { created_at: 'desc' },
     });
@@ -33,11 +31,19 @@ export async function GET(req: NextRequest) {
 // POST: Create a new library item
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    // Require faculty_id
-    if (!body.faculty_id) {
-      return NextResponse.json({ error: "Missing faculty_id" }, { status: 400 });
+    // Get user from header
+    const userId = req.headers.get("x-user-id")
+    if (!userId) {
+      return NextResponse.json({ error: "User not authenticated" }, { status: 401 })
     }
+
+    const user = await getUserById(userId)
+    if (!user || (user.role !== "ADMIN" && user.role !== "FACULTY")) {
+      return NextResponse.json({ error: "Access denied - Admin or Faculty only" }, { status: 403 })
+    }
+
+    const body = await req.json();
+    // faculty_id is now optional
     // Safely handle purchase_date and purchase_value
     let purchaseDate = null;
     if (body.purchase_date) {
@@ -58,7 +64,7 @@ export async function POST(req: NextRequest) {
         available_quantity: Number(body.item_quantity),
         item_location: body.item_location,
         item_specification: body.item_specification || '',
-        faculty_id: body.faculty_id,
+        faculty_id: body.faculty_id || null,
         
         invoice_number: body.invoice_number || '',
         purchased_from: body.purchased_from || '',
@@ -67,7 +73,7 @@ export async function POST(req: NextRequest) {
         purchase_currency: body.purchase_currency || 'INR',
         front_image_id: body.front_image_id || '',
         back_image_id: body.back_image_id || '',
-        created_by: body.created_by || 'system',
+        created_by: user.name,
       },
     });
     return NextResponse.json({ item });
