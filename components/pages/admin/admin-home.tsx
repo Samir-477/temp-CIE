@@ -2,45 +2,74 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Users, GraduationCap, BookOpen, MapPin, Wrench, TrendingUp } from "lucide-react"
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 interface AdminHomeProps {
   onPageChange?: (page: string) => void
 }
 
 export function AdminHome({ onPageChange }: AdminHomeProps) {
+  const [studentCount, setStudentCount] = useState<number | null>(null);
+  const [facultyCount, setFacultyCount] = useState<number | null>(null);
+  const [courseCount, setCourseCount] = useState<number | null>(null);
+  const [locationCount, setLocationCount] = useState<number | null>(null);
+  const [labComponentCount, setLabComponentCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetch('/api/students/count')
+      .then(res => res.json())
+      .then(data => setStudentCount(data.count))
+      .catch(() => setStudentCount(null));
+    fetch('/api/faculty/count')
+      .then(res => res.json())
+      .then(data => setFacultyCount(data.count))
+      .catch(() => setFacultyCount(null));
+    fetch('/api/courses/count')
+      .then(res => res.json())
+      .then(data => setCourseCount(data.count))
+      .catch(() => setCourseCount(null));
+    fetch('/api/locations/count')
+      .then(res => res.json())
+      .then(data => setLocationCount(data.count))
+      .catch(() => setLocationCount(null));
+    fetch('/api/lab-components/count')
+      .then(res => res.json())
+      .then(data => setLabComponentCount(data.count))
+      .catch(() => setLabComponentCount(null));
+  }, []);
+
   const stats = [
     {
       title: "Faculty",
-      value: "24 (*)",
+      value: typeof facultyCount === 'number' ? facultyCount.toString() : "-",
       description: "Active",
       icon: Users,
       color: "text-blue-600",
     },
     {
       title: "Students",
-      value: "342 (*)",
+      value: typeof studentCount === 'number' ? studentCount.toString() : "-",
       description: "Enrolled",
       icon: GraduationCap,
       color: "text-green-600",
     },
     {
       title: "Courses",
-      value: "18 (*)",
+      value: typeof courseCount === 'number' ? courseCount.toString() : "-",
       description: "Currently offered",
       icon: BookOpen,
       color: "text-purple-600",
     },
     {
       title: "Locations",
-      value: "12 (*)",
+      value: typeof locationCount === 'number' ? locationCount.toString() : "-",
       description: "Available classrooms",
       icon: MapPin,
       color: "text-orange-600",
     },
     {
       title: "Lab Components",
-      value: "156 (*)",
+      value: typeof labComponentCount === 'number' ? labComponentCount.toString() : "-",
       description: "Total inventory",
       icon: Wrench,
       color: "text-red-600",

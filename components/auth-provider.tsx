@@ -9,6 +9,7 @@ export interface User {
   email: string
   name: string
   image?: string
+  image_path?: string // <-- add this line
   role: UserRole
   phone?: string
   join_date: Date

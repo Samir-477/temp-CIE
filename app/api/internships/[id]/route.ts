@@ -13,6 +13,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
   }
   const internshipId = params.id;
   try {
+    console.log('DELETE /api/internships/[id] called by user:', userId, 'for internship:', internshipId);
     // Find all applications for this internship
     const applications = await prisma.application.findMany({
       where: { internshipId },
@@ -21,17 +22,23 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     // Delete resume files
     for (const app of applications) {
       if (app.resumeUrl) {
-        const filePath = path.join(process.cwd(), 'public', app.resumeUrl.replace(/^\//, ''));
-        try { await fs.unlink(filePath); } catch (e) { /* ignore if file doesn't exist */ }
+        const filePath = path.join(process.cwd(), 'public', app.resumeUrl.replace(/^\/|^\//, ''));
+        try { await fs.unlink(filePath); } catch (e) { console.error('Failed to delete resume file:', filePath, e); }
       }
+    }
+    // Delete description PDF if present
+    const internship = await prisma.internshipProject.findUnique({ where: { id: internshipId } });
+    if (internship && internship.descriptionPdfUrl) {
+      const descPath = path.join(process.cwd(), 'public', internship.descriptionPdfUrl.replace(/^\/|^\//, ''));
+      try { await fs.unlink(descPath); } catch (e) { console.error('Failed to delete description PDF:', descPath, e); }
     }
     // Delete applications
     await prisma.application.deleteMany({ where: { internshipId } });
     // Delete internship
     await prisma.internshipProject.delete({ where: { id: internshipId } });
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, message: 'Internship deleted. All resumes and the description PDF (if any) have also been deleted.' });
   } catch (error) {
-    console.error('Error deleting internship:', error);
-    return NextResponse.json({ error: 'Failed to delete internship' }, { status: 500 });
+    console.error('Error deleting internship:', { userId, internshipId, error });
+    return NextResponse.json({ error: 'Failed to delete internship', details: String(error) }, { status: 500 });
   }
 } 

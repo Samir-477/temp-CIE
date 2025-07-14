@@ -16,9 +16,11 @@ export async function POST(req: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const fileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
-    const filePath = path.join(process.cwd(), 'public', 'resumes', fileName);
+    const type = formData.get('type');
+    const folder = type === 'description' ? 'description' : 'resumes';
+    const filePath = path.join(process.cwd(), 'public', folder, fileName);
     await writeFile(filePath, buffer);
-    const url = `/resumes/${fileName}`;
+    const url = `/${folder}/${fileName}`;
     return NextResponse.json({ url });
   } catch (error) {
     console.error('Resume upload error:', error);

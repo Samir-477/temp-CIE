@@ -17,6 +17,7 @@ model User {
   created_at          DateTime            @default(now())
   join_date           DateTime            @default(now())
   updated_at          DateTime            @updatedAt
+  image_path          String?             // <-- Added for profile photo
   admin               Admin?
   faculty             Faculty?
   student             Student?
