@@ -26,7 +26,6 @@ export default function InternshipCreateForm({ onSuccess, initialData }: { onSuc
   // Track form validity
   const isFormValid =
     form.title.trim() &&
-    form.description.trim() &&
     form.skills.every(s => s.trim()) &&
     form.facultyId &&
     form.duration.trim() &&
@@ -118,73 +117,73 @@ export default function InternshipCreateForm({ onSuccess, initialData }: { onSuc
       const fd = new FormData();
       fd.append('file', descriptionPdf);
       fd.append('type', 'description');
-      const uploadRes = await fetch('/api/upload-resume', { method: 'POST', body: fd });
+      // Use the new upload endpoint
+      const uploadRes = await fetch('/api/upload-description', { method: 'POST', body: fd });
       if (uploadRes.ok) {
         const uploadData = await uploadRes.json();
         pdfUrl = uploadData.url;
         setDescriptionPdfUrl(pdfUrl);
       } else {
-        toast({ title: 'PDF upload failed', variant: 'destructive' });
-        setLoading(false);
-        return;
+        // PDF upload failed, but allow internship creation to proceed
+        toast({ title: 'PDF upload failed (optional)', variant: 'destructive' });
+        pdfUrl = '';
       }
     }
+    let res;
+    if (initialData && initialData.id) {
+      // Edit mode: update internship
+      res = await fetch(`/api/internships/${initialData.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': userId,
+        },
+        body: JSON.stringify({
+          ...form,
+          skills: form.skills.filter(s => s.trim()),
+          slots: slotsNum,
+          description_path: pdfUrl,
+        }),
+      });
+    } else {
+      // Create mode: create internship
+      const fd = new FormData();
+      fd.append('title', form.title);
+      fd.append('duration', form.duration);
+      fd.append('skills', JSON.stringify(form.skills));
+      fd.append('facultyId', form.facultyId);
+      fd.append('slots', form.slots);
+      fd.append('startDate', form.startDate);
+      fd.append('endDate', form.endDate);
+      if (descriptionPdf) fd.append('descriptionPdf', descriptionPdf);
+      res = await fetch('/api/internships', {
+        method: 'POST',
+        body: fd,
+        headers: { 'x-user-id': userId },
+      });
+    }
+    let result;
     try {
-      let res, data;
-      if (initialData && initialData.id) {
-        // Edit mode: update internship
-        res = await fetch(`/api/internships/${initialData.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-user-id': userId,
-          },
-          body: JSON.stringify({
-            ...form,
-            skills: form.skills.filter(s => s.trim()),
-            slots: slotsNum,
-            descriptionPdfUrl: pdfUrl,
-          }),
-        });
-        data = await res.json();
-        setLoading(false);
-        if (res.ok) {
-          toast({ title: 'Internship updated!' });
-          if (onSuccess) onSuccess();
-        } else {
-          toast({ title: 'Error', description: data.error || 'Failed to update internship', variant: 'destructive' });
-        }
-      } else {
-        // Create mode: create internship
-        res = await fetch('/api/internships', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-user-id': userId,
-          },
-          body: JSON.stringify({
-            ...form,
-            skills: form.skills.filter(s => s.trim()),
-            slots: slotsNum,
-            descriptionPdfUrl: pdfUrl,
-          }),
-        });
-        data = await res.json();
-        setLoading(false);
-        if (res.ok) {
-          toast({ title: 'Internship created!' });
-          setForm({ title: '', description: '', duration: '', skills: [''], facultyId: '', slots: '', startDate: '', endDate: '',uploadDescription:'' });
-          setDescriptionPdf(null);
-          setDescriptionPdfUrl('');
-          if (onSuccess) onSuccess();
-        } else {
-          toast({ title: 'Error', description: data.error || 'Failed to create internship', variant: 'destructive' });
-        }
-      }
-    } catch (err) {
+      result = await res.json();
+    } catch {
+      console.error('Failed to parse response');
+      result = null;
+    }
+    if (!res.ok) {
+      console.error('Internship save error:', result || 'Unknown error');
+      toast({ title: 'Error', description: (result && result.error) || 'Failed to create internship', variant: 'destructive' });
       setLoading(false);
-      toast({ title: 'Error', description: (err instanceof Error ? err.message : String(err)) || 'Failed to save internship', variant: 'destructive' });
-      console.error('Internship save error:', err);
+      return;
+    }
+    setLoading(false);
+    if (res.ok) {
+      toast({ title: 'Internship created!' });
+      setForm({ title: '', description: '', duration: '', skills: [''], facultyId: '', slots: '', startDate: '', endDate: '',uploadDescription:'' });
+      setDescriptionPdf(null);
+      setDescriptionPdfUrl('');
+      if (onSuccess) onSuccess();
+    } else {
+      toast({ title: 'Error', description: result?.error || 'Failed to create internship', variant: 'destructive' });
     }
   };
 

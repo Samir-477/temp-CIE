@@ -82,7 +82,7 @@ export default function FacultyInternshipDashboard() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-8">
+    <div className="p-8">
       <h2 className="text-2xl font-bold mb-6">My Internship Projects</h2>
       {loading && <div>Loading...</div>}
       {!loading && internships.length === 0 && (
@@ -91,9 +91,9 @@ export default function FacultyInternshipDashboard() {
         </div>
       )}
       {!loading && internships.length > 0 && (
-        <div className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-0 m-0">
           {internships.map((internship) => (
-            <Card key={internship.id} className="p-4 flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+            <Card key={internship.id} className="p-4 flex flex-col md:flex-col gap-4">
               <div>
                 <h3 className="text-lg font-semibold">{internship.title}</h3>
                 <div className="text-sm text-gray-600 mb-1">Duration: {internship.startDate ? new Date(internship.startDate).toLocaleDateString() : '-'} to {internship.endDate ? new Date(internship.endDate).toLocaleDateString() : '-'}</div>

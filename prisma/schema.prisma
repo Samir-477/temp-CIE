@@ -457,18 +457,18 @@ model LibraryRequest {
 }
 
 model InternshipProject {
-  id          String        @id @default(cuid())
-  title       String
-  description String
-  duration    String
-  skills      String[]
-  faculty     User          @relation("FacultyProjects", fields: [facultyId], references: [id])
-  facultyId   String
-  isAccepted  Boolean       @default(false)
-  applicants  Application[]
-  slots       Int?
-  startDate   DateTime
-  endDate     DateTime
+  id                String   @id @default(cuid())
+  title             String
+  description_path  String?
+  duration          String
+  skills            String[]
+  faculty           User      @relation("FacultyProjects", fields: [facultyId], references: [id])
+  facultyId         String
+  isAccepted        Boolean   @default(false)
+  applicants        Application[]
+  slots             Int?
+  startDate         DateTime
+  endDate           DateTime
 
   @@index([facultyId])
 }

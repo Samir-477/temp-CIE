@@ -75,7 +75,7 @@ async function main() {
           },
         });
       } else if (userInfo.role === 'FACULTY') {
-        const facultyId = `FAC${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+        const studentId = `STU${Date.now()}${Math.floor(Math.random() * 1000)}`;
         await prisma.user.create({
           data: {
             email: userInfo.email,

@@ -107,9 +107,10 @@ const StudentInternshipDashboard = () => {
     <div className="max-w-3xl mx-auto p-6">
       {loading && <div>Loading...</div>}
       {!loading && internships.length === 0 && <div>No internships available.</div>}
-      <div className="space-y-6">
+      {/* Change the container to a grid with 3 columns on large screens */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {internships.map((internship) => (
-          <Card key={internship.id} className="p-4 flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+          <Card key={internship.id} className="p-4 flex flex-col md:flex-col gap-4">
             <div>
               <h3 className="text-lg font-semibold">{internship.title}</h3>
               <div className="text-sm text-gray-600">{internship.description}</div>
