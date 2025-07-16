@@ -437,8 +437,10 @@ export function ManageDomains() {
             <Card key={domain.id} className="border shadow-sm bg-gray-50">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="flex items-center text-base">
-                    <Building className={`h-4 w-4 mr-2 text-gray-500`} />
+
+                  <CardTitle className={`flex items-center text-base ${hasCoordinator ? 'text-gray-900' : 'text-gray-900 dark:text-white'}`}>
+                    <Building className={`h-4 w-4 mr-2 ${hasCoordinator ? 'text-green-600' : 'text-gray-400'}`} />
+
                     {domain.name}
                   </CardTitle>
                   <Badge variant={hasCoordinator ? "default" : "secondary"} className="text-xs">
@@ -502,7 +504,7 @@ export function ManageDomains() {
       {/* Faculty List */}
       <Card className="border shadow-sm">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">All Faculty Members</CardTitle>
+          <CardTitle className="text-base text-gray-900 dark:text-white">All Faculty Members</CardTitle>
           <CardDescription className="text-xs">
             List of all faculty members and their current coordinator status
           </CardDescription>
@@ -517,21 +519,25 @@ export function ManageDomains() {
                 <div key={f.id} className={`p-3 border rounded-md ${isCoordinator ? 'border-green-200 bg-green-50' : 'border-gray-200'}`}>
                   <div className="flex items-center justify-between">
                     <div>
-                      <h4 className="font-medium text-sm">{f.user.name}</h4>
+                      <h4 className="font-medium text-sm text-[#000]">{f.user.name}</h4>
                       <p className="text-xs text-gray-600">{f.department}</p>
                       <p className="text-xs text-gray-500">{f.user.email}</p>
                       <div className="mt-1 flex flex-wrap gap-1">
                         {facultyAssignments.map((assignment) => (
-                          <Badge key={assignment.id} variant="outline" className="text-xs px-1 py-0">
-                            {domains.find(d => d.id === assignment.domain_id)?.name || assignment.domain_name}
+
+                          <Badge key={assignment.id} variant="outline" className="text-xs px-1 py-0 text-gray-900">
+                            {PREDEFINED_DOMAINS.find(d => d.id === assignment.domain_name)?.name || assignment.domain_name}
+
                           </Badge>
                         ))}
                       </div>
                     </div>
                     <div className="text-right">
-                      <Badge variant={isCoordinator ? "default" : "secondary"} className="text-xs">
-                        {isCoordinator ? "Coordinator" : "Available"}
-                      </Badge>
+                      {isCoordinator ? (
+                        <Badge variant="default" className="text-xs">Coordinator</Badge>
+                      ) : (
+                        <span className="tag-available">Available</span>
+                      )}
                       {facultyAssignments.length > 1 && (
                         <p className="text-xs text-gray-500 mt-1">{facultyAssignments.length} domains</p>
                       )}

@@ -99,17 +99,16 @@ export function AdminHome({ onPageChange }: AdminHomeProps) {
           <>
             {/* Colorful Hero Window */}
 
-            <div className="rounded-lg shadow-2xl bg-gradient-to-br from-[#0056a6] via-[#00b6e3] to-[#ff7f32] p-4 min-h-[100px] flex flex-col md:flex-row items-center justify-between relative overflow-hidden">
-              <div className="flex-1 z-6">
-                <div className="flex items-center mb-2 justify-between">
-                  <span className="text-white text-2xl font-extrabold tracking-tight">CIE Admin Portal</span>
-                  <div className="flex gap-4">
-                  <button className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-3 rounded-lg shadow-lg transition-colors text-lg opacity-100">Learn More</button>
-                  <button className="bg-white hover:bg-gray-100 text-blue-700 font-semibold px-8 py-3 rounded-lg shadow-lg transition-colors text-lg opacity-100" onClick={handleQuickActionsClick}>Quick Actions</button>
-                  </div>
+            <div className="rounded-3xl shadow-2xl bg-gradient-to-br from-[#0056a6] via-[#00b6e3] to-[#ff7f32] p-12 min-h-[320px] flex flex-col md:flex-row items-center justify-between mb-4 relative overflow-hidden">
+              <div className="flex-1 z-10">
+                <div className="flex items-center mb-6">
+                  <span className="text-4xl font-extrabold tracking-tight text-white">CIE Admin Portal</span>
                 </div>
-                <h2 className="text-3xl md:text-3xl font-extrabold text-white mb-2">Are you ready to manage innovation?</h2>
-                <p className="text-white/90 mb-4 max-w-2xl text-lg whitespace-nowrap">Welcome to the Centre for Innovation & Entrepreneurship, oversee faculty, students, courses, and more—all in one place.</p>
+                <h2 className="text-3xl md:text-5xl font-extrabold mb-4 text-gray-900 dark:text-white">Are you ready to manage innovation?</h2>
+                <p className="mb-8 max-w-2xl text-lg text-gray-700 dark:text-white/90">Welcome to the Centre for Innovation & Entrepreneurship. Oversee faculty, students, courses, and more—all in one place.</p>
+                <div className="flex gap-6">
+                  <button className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-3 rounded-lg shadow transition-colors text-lg">Learn More</button>
+                  <button className="bg-white hover:bg-gray-100 text-blue-700 font-semibold px-8 py-3 rounded-lg shadow transition-colors text-lg" onClick={handleQuickActionsClick}>Quick Actions</button>
 
                 </div>
               
