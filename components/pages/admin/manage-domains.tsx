@@ -526,8 +526,7 @@ export function ManageDomains() {
                         {facultyAssignments.map((assignment) => (
 
                           <Badge key={assignment.id} variant="outline" className="text-xs px-1 py-0 text-gray-900">
-                            {PREDEFINED_DOMAINS.find(d => d.id === assignment.domain_name)?.name || assignment.domain_name}
-
+                            {domains.find(d => d.id === assignment.domain_name)?.name || assignment.domain_name}
                           </Badge>
                         ))}
                       </div>

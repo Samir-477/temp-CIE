@@ -104,8 +104,13 @@ async function main() {
         });
         createdUsers[userInfo.email] = user;
       } else if (userInfo.role === 'STUDENT') {
+/*<<<<<<< HEAD
         const studentId = `STU${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
         const user = await prisma.user.create({
+=======*/
+        const studentId = `STU${Date.now()}${Math.floor(Math.random() * 1000)}`;
+        await prisma.user.create({
+//>>>>>>> 9bc1b44 (Recovered internship and upload feature)
           data: {
             email: userInfo.email,
             name: userInfo.name,
@@ -144,6 +149,21 @@ async function main() {
     data: {
       name: 'Library',
       description: 'Domain for managing library items and books',
+    }
+  });
+
+  // Add Platform Manager and Developer domains
+  const platformManagerDomain = await prisma.domain.create({
+    data: {
+      name: 'Platform Manager',
+      description: 'Domain for managing platform-related tasks and assignments',
+    }
+  });
+
+  const developerDomain = await prisma.domain.create({
+    data: {
+      name: 'Developer',
+      description: 'Domain for managing developer-related tasks and assignments',
     }
   });
 
@@ -266,7 +286,7 @@ async function main() {
       component_quantity: 10,
       component_tag_id: "445RO",
       component_category: "Microcontroller",
-      component_location: electronicsLab.name,
+      component_location: "Electronics Lab",
       image_path: "lab-images",
       front_image_id: "arduino-front.jpg",
       back_image_id: "arduino-back.jpg",
@@ -640,7 +660,7 @@ async function main() {
   // Summary
   console.log('\n🎉 Seed completed successfully!');
   console.log('\n📊 Summary of created data:');
-  console.log(`   - Domains: 2 (Lab Components, Library)`);
+  console.log(`   - Domains: 4 (Lab Components, Library, Platform Manager, Developer)`);
   console.log(`   - Domain Coordinators: 2`);
   console.log(`   - Courses: 2`);
   console.log(`   - Course Units: 2`);
