@@ -24,6 +24,7 @@ import {
   XCircle, 
   Package, 
   BookOpen, 
+  FolderOpen,
   Calendar,
   AlertTriangle,
   User,
@@ -116,6 +117,25 @@ interface LibraryRequest {
   }
 }
 
+interface Project {
+  id: string;
+  name: string;
+  description: string;
+  status: string;
+  expected_completion_date: string;
+  created_date: string;
+  faculty_creator?: {
+    user: {
+      name: string;
+      email: string;
+    };
+  };
+  components_needed_details?: Array<{
+    id: string;
+    component_name: string;
+  }>;
+}
+
 type RequestUnion = ComponentRequest | LibraryRequest
 
 function isComponentRequest(request: RequestUnion): request is ComponentRequest {
@@ -131,6 +151,7 @@ export function CoordinatorDashboard() {
   const { toast } = useToast()
   const [componentRequests, setComponentRequests] = useState<ComponentRequest[]>([])
   const [libraryRequests, setLibraryRequests] = useState<LibraryRequest[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [facultyNotes, setFacultyNotes] = useState("")
   // Set default tab to 'analytics'
@@ -145,6 +166,7 @@ export function CoordinatorDashboard() {
     description?: string;
     hasLibraryItems?: boolean;
     hasLabComponents?: boolean;
+    hasProjectsManagement?: boolean;
     status?: string; // Added status for domain assignment
   }>>([])
 
@@ -152,7 +174,7 @@ export function CoordinatorDashboard() {
   const [selectedDomain, setSelectedDomain] = useState(coordinatorDomains[0])
 
   // Update selectedRole state to include new roles
-  const [selectedRole, setSelectedRole] = useState<'library' | 'lab' | 'platformManager' | 'developer' | null>(null)
+  const [selectedRole, setSelectedRole] = useState<'library' | 'lab' | 'projects' | 'platformManager' | 'developer' | null>(null)
 
   // In the CoordinatorDashboard component, add state for history search and filter:
   const [historySearchTerm, setHistorySearchTerm] = useState("");
@@ -179,6 +201,7 @@ export function CoordinatorDashboard() {
     if (!selectedRole) {
       const hasLibraryRole = coordinatorDomains.some(domain => domain.hasLibraryItems);
       const hasLabRole = coordinatorDomains.some(domain => domain.hasLabComponents);
+      const hasProjectsRole = coordinatorDomains.some(domain => domain.hasProjectsManagement);
       // Treat a domain named 'Platform Manager', 'Platform Management', or 'Developer' as special roles
       const hasPlatformManagerDomain = coordinatorDomains.some(domain => {
         const name = domain.name?.toLowerCase() || '';
@@ -191,13 +214,15 @@ export function CoordinatorDashboard() {
       const hasPlatformManagerRoleUnified = hasPlatformManagerRole || hasPlatformManagerDomain;
       const hasDeveloperRoleUnified = hasDeveloperRole || hasDeveloperDomain;
 
-      if (hasLibraryRole && !hasLabRole && !hasPlatformManagerRoleUnified && !hasDeveloperRoleUnified) {
+      if (hasLibraryRole && !hasLabRole && !hasProjectsRole && !hasPlatformManagerRoleUnified && !hasDeveloperRoleUnified) {
         setSelectedRole('library');
-      } else if (hasLabRole && !hasLibraryRole && !hasPlatformManagerRoleUnified && !hasDeveloperRoleUnified) {
+      } else if (hasLabRole && !hasLibraryRole && !hasProjectsRole && !hasPlatformManagerRoleUnified && !hasDeveloperRoleUnified) {
         setSelectedRole('lab');
-      } else if (hasPlatformManagerRoleUnified && !hasLibraryRole && !hasLabRole && !hasDeveloperRoleUnified) {
+      } else if (hasProjectsRole && !hasLibraryRole && !hasLabRole && !hasPlatformManagerRoleUnified && !hasDeveloperRoleUnified) {
+        setSelectedRole('projects');
+      } else if (hasPlatformManagerRoleUnified && !hasLibraryRole && !hasLabRole && !hasProjectsRole && !hasDeveloperRoleUnified) {
         setSelectedRole('platformManager');
-      } else if (hasDeveloperRoleUnified && !hasLibraryRole && !hasLabRole && !hasPlatformManagerRoleUnified) {
+      } else if (hasDeveloperRoleUnified && !hasLibraryRole && !hasLabRole && !hasProjectsRole && !hasPlatformManagerRoleUnified) {
         setSelectedRole('developer');
       }
       // If multiple roles exist, don't auto-select - let user choose
@@ -225,22 +250,42 @@ export function CoordinatorDashboard() {
             // Always show roles if assigned, regardless of inventory
             const hasLibraryItems = domain.name.toLowerCase().includes("library");
             const hasLabComponents = domain.name.toLowerCase().includes("lab");
+            const hasProjectsManagement = domain.name.toLowerCase().includes("project");
 
             return {
               ...domain,
               hasLibraryItems,
               hasLabComponents,
+              hasProjectsManagement,
               status: 'Assigned' // Mark as assigned
             }
           } catch (error) {
             console.error(`Error checking inventory for domain ${domain.name}:`, error)
-            return { ...domain, hasLibraryItems: false, hasLabComponents: false, status: 'Not Assigned' } // Mark as not assigned
+            return { ...domain, hasLibraryItems: false, hasLabComponents: false, hasProjectsManagement: false, status: 'Not Assigned' } // Mark as not assigned
           }
         })
       )
       
       setCoordinatorDomains(enhancedDomains)
       setSelectedDomain(enhancedDomains[0]) // Set default selected domain
+      
+      // If user has projects coordinator role, fetch projects immediately
+      const hasProjectsRole = enhancedDomains.some(domain => domain.hasProjectsManagement);
+      if (hasProjectsRole) {
+        console.log('[Debug] User has projects role, fetching projects...');
+        try {
+          const projectsResponse = await fetch("/api/projects/approve", {
+            headers: { "x-user-id": user?.id || "" }
+          })
+          if (projectsResponse.ok) {
+            const projectsData = await projectsResponse.json()
+            console.log('[Debug] Initial projects data received:', projectsData);
+            setProjects(projectsData.projects || [])
+          }
+        } catch (error) {
+          console.error('[Debug] Error fetching initial projects:', error);
+        }
+      }
     } catch (error) {
       console.error("Error fetching coordinator domains:", error)
     }
@@ -263,6 +308,22 @@ export function CoordinatorDashboard() {
       })
       const libraryData = await libraryResponse.json()
       setLibraryRequests(libraryData.requests || [])
+
+      // Fetch projects for projects coordinator
+      if (selectedRole === 'projects') {
+        console.log('[Debug] Fetching projects for projects coordinator...');
+        const projectsResponse = await fetch("/api/projects/approve", {
+          headers: { "x-user-id": user?.id || "" }
+        })
+        if (projectsResponse.ok) {
+          const projectsData = await projectsResponse.json()
+          console.log('[Debug] Projects data received:', projectsData);
+          console.log('[Debug] Projects count:', projectsData.projects?.length || 0);
+          setProjects(projectsData.projects || [])
+        } else {
+          console.error('[Debug] Failed to fetch projects:', projectsResponse.status, projectsResponse.statusText);
+        }
+      }
     } catch (error) {
       console.error("Error fetching requests:", error)
       toast({
@@ -457,13 +518,49 @@ export function CoordinatorDashboard() {
     }
   };
 
+  const handleApproveProject = async (projectId: string, status: "APPROVED" | "REJECTED", notes?: string) => {
+    try {
+      const response = await fetch("/api/projects/approve", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": user?.id || "",
+        },
+        body: JSON.stringify({
+          project_id: projectId,
+          status,
+          notes,
+        }),
+      })
+
+      if (response.ok) {
+        await fetchRequests()
+        toast({
+          title: "Success",
+          description: `Project ${status.toLowerCase()} successfully`,
+        })
+      } else {
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Failed to update project")
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to update project",
+        variant: "destructive",
+      })
+    }
+  };
+
   const getStatusBadge = (status: string, isOverdueItem?: boolean) => {
     const baseClass = "font-medium"
     switch (status) {
       case "PENDING":
         return <Badge className={`bg-yellow-100 text-yellow-800 ${baseClass}`}>Pending Review</Badge>
       case "APPROVED":
-        return <Badge className={`bg-blue-100 text-blue-800 ${baseClass}`}>Approved - Awaiting Collection</Badge>
+        return <Badge className={`bg-blue-100 text-blue-800 ${baseClass}`}>
+          {selectedRole === 'projects' ? 'Approved - Awaiting Start' : 'Approved - Awaiting Collection'}
+        </Badge>
       case "COLLECTED":
         return isOverdueItem ? 
           <Badge className={`bg-red-100 text-red-800 ${baseClass}`}>Collected - Overdue</Badge> :
@@ -570,11 +667,20 @@ export function CoordinatorDashboard() {
   // Determine if user is a library coordinator
   const isLibraryCoordinator = coordinatorDomains.some(domain => domain.hasLibraryItems)
 
+  // Determine if user is a projects coordinator
+  const isProjectsCoordinator = coordinatorDomains.some(domain => domain.hasProjectsManagement)
+
   // Add tabs for management based on selected coordinator role
   const dashboardTabs = [
     { id: 'analytics', label: 'Analytics' },
-    { id: 'collection', label: 'Awaiting Collection' },
-    { id: 'returns', label: 'Active Loans' },
+    { 
+      id: 'collection', 
+      label: selectedRole === 'projects' ? 'Pending Requests' : 'Awaiting Collection' 
+    },
+    { 
+      id: 'returns', 
+      label: selectedRole === 'projects' ? 'Ongoing Projects' : 'Active Loans' 
+    },
     { id: 'history', label: 'History' },
   ];
   
@@ -658,6 +764,30 @@ export function CoordinatorDashboard() {
         historyRequests: history,
         roleName: 'Lab'
       }
+    } else if (selectedRole === 'projects') {
+      // Projects coordinator - map project statuses to interface expectations
+      console.log('[Debug] Projects data for mapping:', projects);
+      console.log('[Debug] Total projects count:', projects.length);
+      
+      const pendingProjects = projects.filter(proj => proj.status === 'PENDING');
+      const ongoingProjects = projects.filter(proj => proj.status === 'ONGOING' || proj.status === 'APPROVED');
+      const completedProjects = projects.filter(proj => proj.status === 'COMPLETED' || proj.status === 'REJECTED');
+      
+      console.log('[Debug] Pending projects:', pendingProjects.length);
+      console.log('[Debug] Ongoing projects:', ongoingProjects.length);
+      console.log('[Debug] Completed projects:', completedProjects.length);
+      
+      console.log('[Debug] Project statuses found:', projects.map(p => p.status));
+      
+      return {
+        requests: projects as any[], // Projects as requests for analytics
+        pendingRequests: pendingProjects as any[], // Pending projects for "Pending Requests" tab
+        collectionRequests: [], // Empty for projects
+        returnRequests: ongoingProjects as any[], // Ongoing projects for "Ongoing Projects" tab  
+        pendingReturnRequests: [], // Empty for projects
+        historyRequests: completedProjects as any[], // Completed/rejected projects for history
+        roleName: 'Projects'
+      }
     }
     return {
       requests: [] as RequestUnion[],
@@ -677,6 +807,8 @@ export function CoordinatorDashboard() {
   const hasAnySpecialRole = hasPlatformManagerRole || hasDeveloperRole;
   const hasMultipleRoles = (
     (coordinatorDomains.some(domain => domain.hasLibraryItems) && coordinatorDomains.some(domain => domain.hasLabComponents)) ||
+    (coordinatorDomains.some(domain => domain.hasLibraryItems) && coordinatorDomains.some(domain => domain.hasProjectsManagement)) ||
+    (coordinatorDomains.some(domain => domain.hasLabComponents) && coordinatorDomains.some(domain => domain.hasProjectsManagement)) ||
     (hasAnyCoordinatorRole && hasPlatformManagerRole) ||
     (hasAnyCoordinatorRole && hasDeveloperRole) ||
     (hasPlatformManagerRole && hasDeveloperRole)
@@ -685,6 +817,7 @@ export function CoordinatorDashboard() {
   // Role detection: build a list of all roles
   const hasLibraryRole = coordinatorDomains.some(domain => domain.hasLibraryItems);
   const hasLabRole = coordinatorDomains.some(domain => domain.hasLabComponents);
+  const hasProjectsRole = coordinatorDomains.some(domain => domain.hasProjectsManagement);
   const hasPlatformManagerDomain = coordinatorDomains.some(domain => {
     const name = domain.name?.toLowerCase() || '';
     return name.includes('platform manager') || name.includes('platform management');
@@ -698,9 +831,10 @@ export function CoordinatorDashboard() {
   // Use these unified flags everywhere below
 
   // Build roles array for card/toggle rendering
-  const userRoles: Array<'library' | 'lab' | 'platformManager' | 'developer'> = [];
+  const userRoles: Array<'library' | 'lab' | 'projects' | 'platformManager' | 'developer'> = [];
   if (hasLibraryRole) userRoles.push('library');
   if (hasLabRole) userRoles.push('lab');
+  if (hasProjectsRole) userRoles.push('projects');
   if (hasPlatformManagerRoleUnified) userRoles.push('platformManager');
   if (hasDeveloperRoleUnified) userRoles.push('developer');
 
@@ -757,6 +891,19 @@ export function CoordinatorDashboard() {
               </CardContent>
             </Card>
           )}
+          {userRoles.includes('projects') && (
+            <Card className="cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 hover:bg-purple-50 hover:border-purple-300" onClick={() => setSelectedRole('projects')}>
+              <CardContent className="p-8 text-center">
+                <FolderOpen className="h-16 w-16 text-purple-600 mx-auto mb-4" />
+                <h3 className="text-2xl font-bold text-gray-900 mb-2">Projects Coordinator</h3>
+                <p className="text-gray-600 mb-4">Review and approve faculty project requests</p>
+                <div className="flex items-center justify-center space-x-2 text-sm text-gray-500">
+                  <FolderOpen className="h-4 w-4" />
+                  <span>Project Requests Management</span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
           {userRoles.includes('platformManager') && (
             <Card className="cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 hover:bg-indigo-50 hover:border-indigo-300" onClick={() => setSelectedRole('platformManager')}>
               <CardContent className="p-8 text-center">
@@ -809,11 +956,13 @@ export function CoordinatorDashboard() {
             >
               {role === 'library' && <BookOpen className="h-4 w-4" />}
               {role === 'lab' && <Package className="h-4 w-4" />}
+              {role === 'projects' && <FolderOpen className="h-4 w-4" />}
               {role === 'platformManager' && <Settings className="h-4 w-4" />}
               {role === 'developer' && <BarChart3 className="h-4 w-4" />}
               <span>
                 {role === 'library' && 'Library Coordinator'}
                 {role === 'lab' && 'Lab Coordinator'}
+                {role === 'projects' && 'Projects Coordinator'}
                 {role === 'platformManager' && 'Platform Manager'}
                 {role === 'developer' && 'Developer'}
               </span>
@@ -832,7 +981,7 @@ export function CoordinatorDashboard() {
 
           {/* Clickable Summary Cards with Hover Effects */}
           {/* Dashboard Horizontal Pill Cards for Library and Lab Coordinators */}
-          {(selectedRole === 'library' && isLibraryCoordinator) || (selectedRole === 'lab' && isLabCoordinator) ? (
+          {(selectedRole === 'library' && isLibraryCoordinator) || (selectedRole === 'lab' && isLabCoordinator) || (selectedRole === 'projects' && isProjectsCoordinator) ? (
             <div className="flex flex-row gap-6 justify-center items-center my-6">
               <button
                 className={`flex flex-col items-center justify-center px-8 py-6 rounded-2xl border transition-all duration-200 shadow-sm min-w-[220px] max-w-[260px] h-[110px] text-center select-none
@@ -848,7 +997,9 @@ export function CoordinatorDashboard() {
                 onClick={() => setActiveTab('collection')}
               >
                 <CheckCircle className={`h-6 w-6 mb-1 ${activeTab === 'collection' ? 'text-blue-600' : 'text-blue-400'}`} />
-                <span className={`text-base font-medium ${activeTab === 'collection' ? 'text-blue-600' : 'text-gray-800'}`}>Awaiting Collection</span>
+                <span className={`text-base font-medium ${activeTab === 'collection' ? 'text-blue-600' : 'text-gray-800'}`}>
+                  {selectedRole === 'projects' ? 'Awaiting Approval' : 'Awaiting Collection'}
+                </span>
               </button>
               <button
                 className={`flex flex-col items-center justify-center px-8 py-6 rounded-2xl border transition-all duration-200 shadow-sm min-w-[220px] max-w-[260px] h-[110px] text-center select-none
@@ -856,7 +1007,9 @@ export function CoordinatorDashboard() {
                 onClick={() => setActiveTab('returns')}
               >
                 <Package className={`h-6 w-6 mb-1 ${activeTab === 'returns' ? 'text-green-600' : 'text-green-400'}`} />
-                <span className={`text-base font-medium ${activeTab === 'returns' ? 'text-green-600' : 'text-gray-800'}`}>Active Loans</span>
+                <span className={`text-base font-medium ${activeTab === 'returns' ? 'text-green-600' : 'text-gray-800'}`}>
+                  {selectedRole === 'projects' ? 'Active Projects' : 'Active Loans'}
+                </span>
               </button>
               <button
                 className={`flex flex-col items-center justify-center px-8 py-6 rounded-2xl border transition-all duration-200 shadow-sm min-w-[220px] max-w-[260px] h-[110px] text-center select-none
@@ -872,7 +1025,7 @@ export function CoordinatorDashboard() {
           {/* Dashboard Tabs - removed as per user request, navigation is now only via cards */}
 
           {/* Tab Content */}
-          {activeTab === 'analytics' && (selectedRole === 'library' || selectedRole === 'lab') && (
+          {activeTab === 'analytics' && (selectedRole === 'library' || selectedRole === 'lab' || selectedRole === 'projects') && (
             <Card>
               <CardHeader>
                 <CardTitle>{roleName} Analytics Dashboard</CardTitle>
@@ -885,7 +1038,9 @@ export function CoordinatorDashboard() {
                     <div className="text-lg font-bold leading-tight">{requests.length}</div>
                   </div>
                   <div className="flex-1 min-w-[100px] max-w-[140px] bg-white rounded shadow-sm px-2 py-1 flex flex-col items-center justify-center text-center border border-gray-200">
-                    <div className="text-xs text-gray-500 font-medium mb-0.5">Active Loans</div>
+                    <div className="text-xs text-gray-500 font-medium mb-0.5">
+                      {selectedRole === 'projects' ? 'Active Projects' : 'Active Loans'}
+                    </div>
                     <div className="text-lg font-bold leading-tight">{returnRequests.length}</div>
                   </div>
                   <div className="flex-1 min-w-[100px] max-w-[140px] bg-white rounded shadow-sm px-2 py-1 flex flex-col items-center justify-center text-center border border-gray-200">
@@ -920,7 +1075,9 @@ export function CoordinatorDashboard() {
                   <Card>
                     <CardContent className="p-8 text-center">
                       <CheckCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                      <h3 className="text-lg font-medium text-gray-900 mb-2">No items awaiting collection</h3>
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">
+                        {selectedRole === 'projects' ? 'No projects awaiting approval' : 'No items awaiting collection'}
+                      </h3>
                       <p className="text-gray-600">All approved {roleName.toLowerCase()} items have been collected.</p>
                     </CardContent>
                   </Card>
@@ -1015,7 +1172,9 @@ export function CoordinatorDashboard() {
           {activeTab === 'returns' && selectedRole && (
             <Card>
               <CardHeader>
-                <CardTitle>{roleName} Active Loans</CardTitle>
+                <CardTitle>
+                  {roleName} {selectedRole === 'projects' ? 'Active Projects' : 'Active Loans'}
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 {/* Define filteredActiveLoans here */}

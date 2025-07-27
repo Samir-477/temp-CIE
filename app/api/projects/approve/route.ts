@@ -30,14 +30,14 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Faculty profile not found" }, { status: 404 })
     }
 
-    // Check if faculty is coordinator for Lab Components domain
-    const isLabComponentsCoordinator = faculty.domain_assignments.some(
-      assignment => assignment.domain.name === "Lab Components"
+    // Check if faculty is coordinator for Projects domain
+    const isProjectsCoordinator = faculty.domain_assignments.some(
+      assignment => assignment.domain.name === "Projects"
     )
 
-    if (!isLabComponentsCoordinator) {
+    if (!isProjectsCoordinator) {
       return NextResponse.json({ 
-        error: "Access denied - Only Lab Components coordinators can approve projects" 
+        error: "Access denied - Only Projects coordinators can approve projects" 
       }, { status: 403 })
     }
 
@@ -131,14 +131,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Faculty profile not found" }, { status: 404 })
     }
 
-    // Check if faculty is coordinator for Lab Components domain
-    const isLabComponentsCoordinator = faculty.domain_assignments.some(
-      assignment => assignment.domain.name === "Lab Components"
+    // Check if faculty is coordinator for Projects domain
+    const isProjectsCoordinator = faculty.domain_assignments.some(
+      assignment => assignment.domain.name === "Projects"
     )
 
-    if (!isLabComponentsCoordinator) {
+    if (!isProjectsCoordinator) {
       return NextResponse.json({ 
-        error: "Access denied - Only Lab Components coordinators can view pending projects" 
+        error: "Access denied - Only Projects coordinators can view pending projects" 
       }, { status: 403 })
     }
 
