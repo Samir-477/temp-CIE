@@ -51,6 +51,7 @@ interface DashboardLayoutProps {
     id: string
     label: string
     icon: React.ComponentType<any>
+    disabled?: boolean
   }>
 }
 
@@ -125,6 +126,9 @@ export function DashboardLayout({ children, currentPage, onPageChange, menuItems
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const { theme, setTheme } = useTheme()
   const { activities, unreadActivities, loading } = useNotifications()
+
+  // Only disable scrolling for dashboard home pages (case-insensitive)
+  const isDashboardHome = ["home", "dashboard"].includes(currentPage.toLowerCase());
 
   const sidebarWidth = sidebarCollapsed ? "w-16" : "w-64"
   const mainMargin = sidebarCollapsed ? "lg:ml-16" : "lg:ml-64"
@@ -242,7 +246,7 @@ export function DashboardLayout({ children, currentPage, onPageChange, menuItems
   }
 
   return (
-    <div className="min-h-screen bg-white dark:bg-dark5 dark:text-dark1">
+    <div className={cn("min-h-screen bg-white dark:bg-dark5 dark:text-dark1", isDashboardHome ? "overflow-hidden" : "overflow-auto") }>
       {/* Navbar */}
       <div
         className={cn(
@@ -369,23 +373,32 @@ export function DashboardLayout({ children, currentPage, onPageChange, menuItems
               >
                 <button
                   className={cn(
-                    "w-full flex items-center p-3 transition-all duration-200 rounded-lg mx-1 transform hover:scale-105 focus:scale-105",
+                    "w-full flex items-center p-3 transition-all duration-200 rounded-lg mx-1",
                     sidebarCollapsed ? "justify-center px-2" : "px-4",
-                    currentPage === item.id
-                      ? "bg-indigo-200 text-indigo-800 font-medium shadow-sm"
-                      : "text-gray-800 hover:bg-blue-100 hover:text-indigo-800 dark:text-dark1"
+                    item.disabled 
+                      ? "text-gray-400 cursor-not-allowed opacity-50" 
+                      : currentPage === item.id
+                        ? "bg-indigo-200 text-indigo-800 font-medium shadow-sm transform hover:scale-105 focus:scale-105"
+                        : "text-gray-800 hover:bg-blue-100 hover:text-indigo-800 dark:text-dark1 transform hover:scale-105 focus:scale-105"
                   )}
                   onClick={() => {
-                    onPageChange(item.id)
-                    setSidebarOpen(false)
+                    if (!item.disabled) {
+                      onPageChange(item.id)
+                      setSidebarOpen(false)
+                    }
                   }}
                   title={sidebarCollapsed ? item.label : undefined}
+                  disabled={item.disabled}
                 >
                   <item.icon 
                     className={cn(
                       "h-5 w-5 transition-transform duration-300",
                       !sidebarCollapsed && "mr-3",
-                      currentPage === item.id ? "text-blue-600" : "text-gray-600 dark:text-dark1"
+                      item.disabled 
+                        ? "text-gray-400" 
+                        : currentPage === item.id 
+                          ? "text-blue-600" 
+                          : "text-gray-600 dark:text-dark1"
                     )} 
                   />
                   {!sidebarCollapsed && (
@@ -440,10 +453,9 @@ export function DashboardLayout({ children, currentPage, onPageChange, menuItems
       </div>
 
       {/* Main content */}
-      <div className={cn("transition-all duration-300", mainMargin)}>
-        <div className="pt-16">
-
-          <div className="p-4 lg:p-8 rounded-tl-2xl min-h-[calc(100vh-4rem)]">
+      <div className={cn("transition-all duration-300", isDashboardHome ? "overflow-hidden" : "overflow-auto", mainMargin)}>
+        <div className={cn("pt-16", isDashboardHome ? "overflow-hidden" : "overflow-auto") }>
+          <div className={cn("p-4 lg:p-8 rounded-tl-2xl min-h-[calc(100vh-4rem)]", isDashboardHome ? "overflow-hidden" : "overflow-auto") }>
             {children}
           </div>
         </div>

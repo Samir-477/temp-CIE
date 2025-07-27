@@ -945,6 +945,12 @@ export function ProjectManagement() {
       <div className="flex items-center justify-between mb-4">
         <h2 className="faculty-page-title">Project Management</h2>
         <div className="flex gap-4">
+          <Button
+            variant="outline"
+            onClick={() => setShowFacultyRequests(true)}
+          >
+            Manage Faculty Project Requests
+          </Button>
           <button
             className="btn-edit"
             onClick={() => fetchData()}
@@ -1054,7 +1060,7 @@ export function ProjectManagement() {
                   <Label htmlFor="dueDate">Expected Completion Date</Label>
                   <Input
                     id="dueDate"
-                    type="datetime-local"
+                    type="date"
                     value={newProject.expected_completion_date}
                     onChange={(e) =>
                       setNewProject({
@@ -1123,7 +1129,7 @@ export function ProjectManagement() {
                           <span>Waiting for coordinator approval</span>
                         </div>
                       )}
-                      {project.status === "APPROVED" &&
+                      {project.status === "ONGOING" &&
                         project.enrollment_status === "NOT_STARTED" && (
                           <div className="mt-2 flex items-center text-sm text-green-600">
                             <Calendar className="h-4 w-4 mr-1" />
@@ -1243,7 +1249,7 @@ export function ProjectManagement() {
 
                     {/* Enrollment Management Buttons */}
                     <div className="space-y-2">
-                      {project.status === "APPROVED" &&
+                      {project.status === "ONGOING" &&
                         project.enrollment_status === "NOT_STARTED" && (
                           <Button
                             className="w-full"
@@ -1309,7 +1315,7 @@ export function ProjectManagement() {
                             </svg>
                             Edit
                           </button>
-                          <button className="btn-delete" onClick={() => handleDeleteProject(project.id)}>
+                          <button className="btn-delete" onClick={() => { setProjectToDelete(project); setIsDeleteDialogOpen(true); }}>
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="h-4 w-4 mr-1">
                               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                             </svg>

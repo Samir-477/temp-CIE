@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './car
 import { Button } from './button';
 import { Input } from './input';
 import { Badge } from './badge';
-import { CheckSquare, Square, Plus, Trash2, Clock } from 'lucide-react';
+import { CheckSquare, Square, Plus, Trash2 } from 'lucide-react';
 
 interface TodoItem {
   id: string;
@@ -102,13 +102,6 @@ export function TodoList({ role = 'admin' }: TodoListProps) {
     }
   };
 
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString('en-US', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      hour12: true 
-    });
-  };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
@@ -116,15 +109,19 @@ export function TodoList({ role = 'admin' }: TodoListProps) {
     }
   };
 
+  // Sort todos by priority: high > medium > low
+  const priorityOrder = { high: 0, medium: 1, low: 2 };
+  const sortedTodos = [...todos].sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
+
   return (
     <Card className="todo-list-card transform hover:scale-105 focus:scale-105 transition-transform duration-200">
       <CardHeader>
         <CardTitle className="text-xl">To-Do List</CardTitle>
       </CardHeader>
       <CardContent className="pb-4">
-        <div className="space-y-2">
+        <div className="space-y-1">
           {/* Add new task */}
-          <div className="flex items-baseline gap-2">
+          <div className="flex items-baseline gap-2 mb-1">
             <Input
               placeholder="Add a new task..."
               value={newTask}
@@ -147,14 +144,14 @@ export function TodoList({ role = 'admin' }: TodoListProps) {
           </div>
 
           {/* Todo list */}
-          <div className="space-y-2 max-h-60 overflow-y-auto">
-            {todos.length === 0 ? (
+          <div className="space-y-1 max-h-60 overflow-y-auto">
+            {sortedTodos.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <p>No tasks yet</p>
                 <p className="text-xs mt-1">Add your first task above</p>
               </div>
             ) : (
-              todos.map((todo) => (
+              sortedTodos.map((todo) => (
                 <div
                   key={todo.id}
                   className={`flex items-center gap-3 p-3 border rounded-lg transition-all ${
@@ -183,10 +180,6 @@ export function TodoList({ role = 'admin' }: TodoListProps) {
                         <span className="text-lg">
                           <div className={`w-4 h-4 rounded-full ${getPriorityIcon(todo.priority)}`}></div>
                         </span>
-                        <div className="flex items-center gap-1 text-xs text-gray-500">
-                          <Clock className="h-3 w-3" />
-                          {formatTime(todo.createdAt)}
-                        </div>
                       </div>
                     </div>
                   </div>

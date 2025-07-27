@@ -482,7 +482,7 @@ export function ViewProjects() {
 
   const availableProjects = projects.filter(project => 
     project.type === "FACULTY_ASSIGNED" && 
-    (project.status === "APPROVED") &&
+    (project.status === "ONGOING") &&
     project.created_by !== user?.id &&
     // Only show if enrollment is open or if student hasn't applied yet
     (project.enrollment_status === "OPEN" || 
@@ -682,7 +682,7 @@ export function ViewProjects() {
                     <Label htmlFor="dueDate">Expected Completion Date</Label>
                     <Input
                       id="dueDate"
-                      type="datetime-local"
+                      type="date"
                       value={newProject.expected_completion_date}
                       onChange={(e) => setNewProject({ ...newProject, expected_completion_date: e.target.value })}
                     />
