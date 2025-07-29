@@ -17,11 +17,11 @@ export async function POST(request: NextRequest) {
 
     const user = await getUserById(userId)
     if (!user || user.role !== "FACULTY") {
-            return NextResponse.json({ error: "Access denied - Faculty only" }, { status: 403 })
+      return NextResponse.json({ error: "Access denied - Faculty only" }, { status: 403 })
     }
 
     const body = await request.json()
-    const { project_id, top_k = 3 } = body
+    const { project_id, top_k = 3, custom_prompt = null, export_format = null } = body
 
     if (!project_id) {
       return NextResponse.json({ 
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Prepare project description for the selector
-    const projectDescription = `
+    const defaultProjectDescription = `
 Project: ${project.name}
 
 Description: ${project.description}
@@ -88,6 +88,13 @@ Requirements: Looking for candidates with relevant skills and experience for thi
 
 Expected completion: ${new Date(project.expected_completion_date).toLocaleDateString()}
     `.trim()
+
+    // Use custom prompt if provided, otherwise use default
+    const projectDescription = custom_prompt && custom_prompt.trim() 
+      ? custom_prompt.trim()
+      : project.ai_prompt_custom && project.ai_prompt_custom.trim()
+        ? project.ai_prompt_custom.trim()
+        : defaultProjectDescription
 
     // Create a temporary Python script to run the resume selector
     const scriptPath = path.join(process.cwd(), "scripts", "run_resume_selector.py")
@@ -99,7 +106,7 @@ Expected completion: ${new Date(project.expected_completion_date).toLocaleDateSt
       }, { status: 500 })
     }
 
-    // Create the Python script
+    // Create the optimized Python script
     const pythonScript = `
 import sys
 import os
@@ -113,60 +120,93 @@ os.environ['HF_HUB_DISABLE_SYMLINKS_WARNING'] = '1'
 
 sys.path.append('${path.join(process.cwd(), "scripts").replace(/\\/g, "\\\\")}')
 
-from resume_selector_main_class import ResumeSelector
+from resume_selector_optimized import OptimizedResumeSelector
 
 def main():
     try:
-        # Initialize the resume selector (quiet mode for API)
-        print("Initializing AI Resume Selector...", file=sys.stderr)
-        selector = ResumeSelector(api_key="${mistralApiKey}", quiet=True)
+        # Initialize the optimized resume selector with parallel processing
+        print("🚀 Initializing Optimized AI Resume Selector...", file=sys.stderr)
+        sys.stderr.flush()
+        
+        # Use more workers for better parallelization (adjust based on your system)
+        max_workers = min(8, os.cpu_count() or 4)
+        selector = OptimizedResumeSelector(
+            api_key="${mistralApiKey}", 
+            quiet=False,  # Keep progress updates
+            max_workers=max_workers
+        )
         
         # Process resumes from the project folder
         resume_folder = "${resumesFolder.replace(/\\/g, "\\\\")}"
-        print(f"Processing resumes from: {resume_folder}", file=sys.stderr)
+        print(f"📁 Processing resumes from: {resume_folder}", file=sys.stderr)
+        print(f"⚡ Using {max_workers} parallel workers", file=sys.stderr)
+        sys.stderr.flush()
+        
+        start_time = time.time()
         success = selector.process_resumes(resume_folder)
         
         if not success:
             print(json.dumps({"error": "Failed to process resumes"}))
             return
         
-        print(f"Successfully processed {selector.get_resume_count()} resumes", file=sys.stderr)
+        process_time = time.time() - start_time
+        print(f"✅ Successfully processed {selector.get_resume_count()} resumes in {process_time:.1f}s", file=sys.stderr)
+        sys.stderr.flush()
         
         # Project description
         project_desc = """${projectDescription.replace(/"/g, '\\"')}"""
         
-        # Search for top candidates
-        print("Searching for top candidates...", file=sys.stderr)
-        candidates = selector.search_resumes(project_desc, top_k=${top_k})
+        # Search for top candidates (get all candidates for ranking)
+        search_start = time.time()
+        search_k = selector.get_resume_count()  # Get ALL resumes
+        print(f"🔍 Ranking all {search_k} candidates by semantic similarity...", file=sys.stderr)
+        sys.stderr.flush()
+        
+        candidates = selector.search_resumes(project_desc, top_k=search_k)
+        search_time = time.time() - search_start
         
         if not candidates:
             print(json.dumps({"error": "No suitable candidates found"}))
             return
         
-        # Generate summaries for candidates
-        print("Generating AI analysis for candidates...", file=sys.stderr)
-        results = []
-        for i, candidate in enumerate(candidates, 1):
-            print(f"Analyzing candidate {i}/{len(candidates)}...", file=sys.stderr)
-            summary = selector.generate_candidate_summary(project_desc, candidate)
-            results.append({
-                "file_name": candidate["file_name"],
-                "file_path": candidate["file_path"],
-                "score": candidate["score"],
-                "name": summary.get("name", "Unknown"),
-                "skills": summary.get("skills", []),
-                "reasons": summary.get("reasons", []),
-                "metadata": candidate.get("metadata", {})
-            })
+        print(f"✅ Semantic ranking completed in {search_time:.1f}s", file=sys.stderr)
         
-        print(f"AI analysis completed successfully!", file=sys.stderr)
+        # Generate summaries for ALL candidates using batch processing
+        print(f"🤖 Running AI analysis on all {len(candidates)} candidates in parallel...", file=sys.stderr)
+        print(f"📊 Batch size: {min(4, len(candidates))} concurrent API calls", file=sys.stderr)
+        sys.stderr.flush()
+        
+        analysis_start = time.time()
+        results = selector.generate_candidate_summary_batch(project_desc, candidates)
+        analysis_time = time.time() - analysis_start
+        
+        # Return ALL results (no limit - let faculty choose)
+        final_results = results  # Don't limit to top_k, show all ranked
+        
+        total_time = time.time() - start_time
+        print(f"", file=sys.stderr)
+        print(f"🎯 FINAL SUMMARY:", file=sys.stderr)
+        print(f"   📄 PDF Processing: {process_time:.1f}s", file=sys.stderr)
+        print(f"   🔍 Semantic Ranking: {search_time:.1f}s", file=sys.stderr)
+        print(f"   🤖 AI Analysis: {analysis_time:.1f}s", file=sys.stderr)
+        print(f"   ⏱️  Total Time: {total_time:.1f}s", file=sys.stderr)
+        print(f"   📊 Results: {len(final_results)} candidates ranked from best to worst", file=sys.stderr)
+        
+        # Count successful vs failed analyses
+        successful = sum(1 for r in final_results if r.get('name') not in ['Analysis Error', 'Timeout Error', 'Exception Error', 'JSON Parse Error', 'API Error'])
+        failed = len(final_results) - successful
+        print(f"   ✅ Successful AI analyses: {successful}", file=sys.stderr)
+        print(f"   ❌ Failed AI analyses: {failed}", file=sys.stderr)
+        sys.stderr.flush()
+        
         # Only print JSON to stdout
-        print(json.dumps({"success": True, "candidates": results}))
+        print(json.dumps({"success": True, "candidates": final_results}))
         
     except Exception as e:
         print(json.dumps({"error": str(e)}))
 
 if __name__ == "__main__":
+    import time
     main()
 `
 
@@ -206,7 +246,7 @@ if __name__ == "__main__":
       console.log("Using Python path:", pythonPath);
       const { stdout, stderr } = await execAsync(`"${pythonPath}" "${scriptPath}"`, {
         cwd: process.cwd(),
-        timeout: 3000, // 2 minutes timeout
+        timeout: 1800000, // 30 minutes timeout - should be much faster now with parallel processing
         env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
       })
 
@@ -257,6 +297,40 @@ if __name__ == "__main__":
         console.log("Could not delete temporary script:", error)
       }
 
+      // Handle CSV export if requested
+      if (export_format === 'csv') {
+        const csvHeaders = [
+          'Rank',
+          'Student Name', 
+          'Student Email',
+          'Match Score (%)',
+          'Top Skills',
+          'AI Reasons',
+          'Resume File'
+        ].join(',')
+
+        const csvRows = shortlistedCandidates.map((candidate, index) => {
+          const rank = index + 1
+          const name = candidate.student_name.replace(/"/g, '""') // Escape quotes
+          const email = candidate.student_email.replace(/"/g, '""')
+          const score = Math.round(candidate.score * 100)
+          const skills = candidate.ai_analysis.skills.slice(0, 3).join('; ').replace(/"/g, '""')
+          const reasons = candidate.ai_analysis.reasons.slice(0, 2).join('; ').replace(/"/g, '""')
+          const resumeFile = candidate.file_name.replace(/"/g, '""')
+          
+          return `${rank},"${name}","${email}",${score},"${skills}","${reasons}","${resumeFile}"`
+        })
+
+        const csvContent = [csvHeaders, ...csvRows].join('\n')
+        
+        return new NextResponse(csvContent, {
+          headers: {
+            'Content-Type': 'text/csv',
+            'Content-Disposition': `attachment; filename="ai-shortlist-${project.name.replace(/[^a-zA-Z0-9]/g, '-')}-${new Date().toISOString().split('T')[0]}.csv"`
+          }
+        })
+      }
+
       return NextResponse.json({ 
         success: true,
         project: {
@@ -265,7 +339,8 @@ if __name__ == "__main__":
           description: project.description
         },
         total_applications: project.project_requests.length,
-        shortlisted_candidates: shortlistedCandidates
+        shortlisted_candidates: shortlistedCandidates,
+        prompt_used: projectDescription
       })
 
     } catch (error) {

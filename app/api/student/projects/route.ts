@@ -42,16 +42,16 @@ export async function GET(request: Request) {
           { created_by: userId },
           // Projects for enrolled courses
           { course_id: { in: courseIds } },
-          // All ongoing faculty-assigned projects with open enrollment
+          // All approved/ongoing faculty-assigned projects with open enrollment
           {
             type: "FACULTY_ASSIGNED",
-            status: "ONGOING",
+            status: { in: ["APPROVED", "ONGOING"] },
             enrollment_status: "OPEN"
           },
-          // All ongoing faculty-assigned projects where student has an accepted request
+          // All approved/ongoing faculty-assigned projects where student has an accepted request
           {
-            type: "FACULTY_ASSIGNED",
-            status: "ONGOING",
+            type: "FACULTY_ASSIGNED", 
+            status: { in: ["APPROVED", "ONGOING"] },
             project_requests: {
               some: {
                 student_id: student.id,

@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { FolderOpen, Calendar, FileText, Upload, RefreshCw, Plus, Clock, CheckCircle, Trash2, User, Mail, XCircle } from "lucide-react"
+import { FolderOpen, Calendar, FileText, Upload, RefreshCw, Plus, Clock, CheckCircle, Trash2, User, Mail, XCircle, Info } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/components/auth-provider"
 import {
@@ -142,6 +142,7 @@ export function ViewProjects() {
   const [applicationNotes, setApplicationNotes] = useState("")
   const [resumeFile, setResumeFile] = useState<File | null>(null)
   const [activeTab, setActiveTab] = useState<'my-projects' | 'available-projects'>('my-projects')
+  const [expandedDescriptions, setExpandedDescriptions] = useState<Set<string>>(new Set())
   const { toast } = useToast()
 
   const [newProject, setNewProject] = useState({
@@ -155,6 +156,16 @@ export function ViewProjects() {
 
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
+
+  const toggleDescriptionExpansion = (projectId: string) => {
+    const newExpanded = new Set(expandedDescriptions)
+    if (newExpanded.has(projectId)) {
+      newExpanded.delete(projectId)
+    } else {
+      newExpanded.add(projectId)
+    }
+    setExpandedDescriptions(newExpanded)
+  }
 
   useEffect(() => {
     fetchData()
@@ -480,14 +491,32 @@ export function ViewProjects() {
     return false
   })
 
-  const availableProjects = projects.filter(project => 
-    project.type === "FACULTY_ASSIGNED" && 
-    (project.status === "ONGOING") &&
-    project.created_by !== user?.id &&
-    // Only show if enrollment is open or if student hasn't applied yet
-    (project.enrollment_status === "OPEN" || 
-     !project.project_requests?.some(req => req.student_id === student?.id))
-  )
+  const availableProjects = projects.filter(project => {
+    const isCorrectType = project.type === "FACULTY_ASSIGNED";
+    const isCorrectStatus = project.status === "APPROVED" || project.status === "ONGOING";
+    const isNotOwnProject = project.created_by !== user?.id;
+    const isEnrollmentOpen = project.enrollment_status === "OPEN";
+    const hasNotApplied = !project.project_requests?.some(req => req.student_id === student?.id);
+    
+    const shouldShow = isCorrectType && isCorrectStatus && isNotOwnProject && (isEnrollmentOpen || hasNotApplied);
+    
+    // Debug logging
+    console.log(`[DEBUG] Project ${project.name}:`, {
+      type: project.type,
+      status: project.status,
+      enrollment_status: project.enrollment_status,
+      created_by: project.created_by,
+      current_user: user?.id,
+      isCorrectType,
+      isCorrectStatus,
+      isNotOwnProject,
+      isEnrollmentOpen,
+      hasNotApplied,
+      shouldShow
+    });
+    
+    return shouldShow;
+  })
 
   // Filter projects based on search and status
   const filteredMyProjects = myProjects.filter(project => {
@@ -817,7 +846,36 @@ export function ViewProjects() {
                       <div className="space-y-2">
                         <div>
                           <h3 className="text-sm font-semibold text-gray-700">Description</h3>
-                          <p className="text-sm text-gray-600 mt-1">{project.description}</p>
+                          <div className="flex items-start gap-2">
+                            <p 
+                              className={`text-sm text-gray-600 mt-1 flex-1 ${
+                                expandedDescriptions.has(project.id) 
+                                  ? '' 
+                                  : 'overflow-hidden'
+                              }`}
+                              style={
+                                expandedDescriptions.has(project.id) 
+                                  ? {} 
+                                  : {
+                                      display: '-webkit-box',
+                                      WebkitLineClamp: 6,
+                                      WebkitBoxOrient: 'vertical' as const,
+                                      overflow: 'hidden'
+                                    }
+                              }
+                            >
+                              {project.description}
+                            </p>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-gray-400 hover:text-gray-600 flex-shrink-0"
+                              onClick={() => toggleDescriptionExpansion(project.id)}
+                              title={expandedDescriptions.has(project.id) ? "Show less" : "Show more"}
+                            >
+                              <Info className="h-3 w-3" />
+                            </Button>
+                          </div>
                         </div>
                         {project.components_needed && project.components_needed.length > 0 && (
                           <div>
@@ -1019,7 +1077,36 @@ export function ViewProjects() {
                       <div className="space-y-2">
                         <div>
                           <h3 className="text-sm font-semibold text-gray-700">Description</h3>
-                          <p className="text-sm text-gray-600 mt-1">{project.description}</p>
+                          <div className="flex items-start gap-2">
+                            <p 
+                              className={`text-sm text-gray-600 mt-1 flex-1 ${
+                                expandedDescriptions.has(project.id) 
+                                  ? '' 
+                                  : 'overflow-hidden'
+                              }`}
+                              style={
+                                expandedDescriptions.has(project.id) 
+                                  ? {} 
+                                  : {
+                                      display: '-webkit-box',
+                                      WebkitLineClamp: 6,
+                                      WebkitBoxOrient: 'vertical' as const,
+                                      overflow: 'hidden'
+                                    }
+                              }
+                            >
+                              {project.description}
+                            </p>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-gray-400 hover:text-gray-600 flex-shrink-0"
+                              onClick={() => toggleDescriptionExpansion(project.id)}
+                              title={expandedDescriptions.has(project.id) ? "Show less" : "Show more"}
+                            >
+                              <Info className="h-3 w-3" />
+                            </Button>
+                          </div>
                         </div>
                         {project.components_needed && project.components_needed.length > 0 && (
                           <div>
@@ -1225,7 +1312,7 @@ export function ViewProjects() {
 
       {/* Project Application Dialog */}
       <Dialog open={isApplyDialogOpen} onOpenChange={setIsApplyDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[900px]">
           <DialogHeader>
             <DialogTitle>Apply for Project</DialogTitle>
             <DialogDescription>

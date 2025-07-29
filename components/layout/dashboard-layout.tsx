@@ -42,6 +42,7 @@ import { cn } from "@/lib/utils"
 import { useTheme } from 'next-themes'
 import { NotificationDropdown } from "@/components/ui/notification-dropdown"
 import { useNotifications } from "@/components/notification-provider"
+// Removed Navbar import - using sidebar only
 
 interface DashboardLayoutProps {
   children: ReactNode
@@ -247,86 +248,6 @@ export function DashboardLayout({ children, currentPage, onPageChange, menuItems
 
   return (
     <div className={cn("min-h-screen bg-white dark:bg-dark5 dark:text-dark1", isDashboardHome ? "overflow-hidden" : "overflow-auto") }>
-      {/* Navbar */}
-      <div
-        className={cn(
-          "fixed top-0 right-0 left-0 h-20 bg-[#e3f0ff] dark:bg-dark4 border-b border-gray-200 dark:border-dark3 z-30 transition-all duration-300",
-          sidebarCollapsed ? "lg:left-16" : "lg:left-64",
-        )}
-      >
-        <div className="flex items-center justify-between h-full px-4">
-          {/* Mobile menu button */}
-          <div className="lg:hidden">
-            <Button variant="outline" size="icon" onClick={() => setSidebarOpen(!sidebarOpen)}>
-              <Menu className="h-4 w-4" />
-            </Button>
-          </div>
-
-          <div className="flex items-center gap-2 justify-end flex-1">
-            {/* Dark mode toggle button */}
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Toggle dark mode"
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            >
-              {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-            </Button>
-
-            <NotificationDropdown activities={activities} loading={loading} onPageChange={onPageChange} />
-
-            {/* Profile dropdown */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-10 px-3 rounded-full flex items-center space-x-2">
-                  <div className="flex items-center space-x-2">
-                    <div className="text-right">
-                      <p className="font-medium text-gray-900 text-sm">{user?.name}</p>
-                      <p className="text-xs leading-none text-muted-foreground dark:text-white">
-                        {user?.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1).toLowerCase() : ''}
-                      </p>
-                    </div>
-                    <Avatar className="h-8 w-8">
-                      <AvatarImage 
-                        src={user?.role === 'FACULTY' && user?.profileData?.faculty_id ? `/profile-img/${user.profileData.faculty_id}.jpg` : undefined}
-                        alt={user?.name || 'User avatar'}
-                        onError={(e) => {
-                          // Try different extensions if jpg fails
-                          const currentSrc = e.currentTarget.src;
-                          if (currentSrc.includes('.jpg')) {
-                            e.currentTarget.src = currentSrc.replace('.jpg', '.jpeg');
-                          } else if (currentSrc.includes('.jpeg')) {
-                            e.currentTarget.src = currentSrc.replace('.jpeg', '.png');
-                          }
-                        }}
-                      />
-                      <AvatarFallback className="bg-blue-100 text-blue-600 font-semibold text-sm">
-                        {user?.name.charAt(0)}
-                      </AvatarFallback>
-                    </Avatar>
-                  </div>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" forceMount>
-                <DropdownMenuItem onClick={() => onPageChange('profile')} className="cursor-pointer">
-                  <User className="mr-2 h-4 w-4" />
-                  <span>Profile</span>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                {/* Sign Out Button */}
-                <DropdownMenuItem
-                  onClick={handleSignOut}
-                  className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer"
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  <span className="font-medium">Sign Out</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-      </div>
-
       {/* Sidebar */}
       <div
         className={cn(
@@ -341,7 +262,15 @@ export function DashboardLayout({ children, currentPage, onPageChange, menuItems
       >
         <div className="flex flex-col h-full">
           {/* Header with gradient */}
-          <div className="flex items-center justify-center h-20 px-4 border-b border-indigo-200 bg-white/90">
+          <div className="flex items-center justify-center h-20 px-4 border-b border-indigo-200 bg-white/90 relative">
+            {/* Mobile menu button */}
+            <button
+              className="absolute left-4 lg:hidden p-2 rounded-md text-gray-600 hover:bg-gray-100"
+              onClick={() => setSidebarOpen(false)}
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+            
             <div className="relative w-full h-full flex items-center justify-center p-2">
               {sidebarCollapsed ? (
                 <img 
@@ -423,7 +352,73 @@ export function DashboardLayout({ children, currentPage, onPageChange, menuItems
 
           {/* Bottom navigation items */}
           <div className="px-2 py-1 mt-auto">
-            {/* Bottom navigation items removed */}
+            {/* User Profile Section */}
+            {user && !sidebarCollapsed && (
+              <div className="mb-3 p-3 bg-indigo-50 rounded-lg border border-indigo-100">
+                <div className="flex items-center space-x-3">
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src="" alt={user.name} />
+                    <AvatarFallback className="bg-primary text-primary-foreground text-xs">
+                      {user.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {user.name}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">
+                      {user.role}
+                    </p>
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                        <User className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                      <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={handleSignOut}>
+                        <LogOut className="mr-2 h-4 w-4" />
+                        <span>Log out</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+            )}
+            
+            {/* Collapsed user profile */}
+            {user && sidebarCollapsed && (
+              <div className="mb-3 flex justify-center">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-10 w-10 p-0">
+                      <Avatar className="h-8 w-8">
+                        <AvatarImage src="" alt={user.name} />
+                        <AvatarFallback className="bg-primary text-primary-foreground text-xs">
+                          {user.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent side="right" align="end" className="w-48">
+                    <DropdownMenuLabel>
+                      <div>
+                        <p className="font-medium">{user.name}</p>
+                        <p className="text-sm text-muted-foreground">{user.role}</p>
+                      </div>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleSignOut}>
+                      <LogOut className="mr-2 h-4 w-4" />
+                      <span>Log out</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            )}
           </div>
 
           {/* Collapse button */}
@@ -454,8 +449,16 @@ export function DashboardLayout({ children, currentPage, onPageChange, menuItems
 
       {/* Main content */}
       <div className={cn("transition-all duration-300", isDashboardHome ? "overflow-hidden" : "overflow-auto", mainMargin)}>
-        <div className={cn("pt-16", isDashboardHome ? "overflow-hidden" : "overflow-auto") }>
-          <div className={cn("p-4 lg:p-8 rounded-tl-2xl min-h-[calc(100vh-4rem)]", isDashboardHome ? "overflow-hidden" : "overflow-auto") }>
+        {/* Mobile menu button */}
+        <button
+          className="fixed top-4 left-4 z-50 lg:hidden p-3 bg-indigo-600 text-white rounded-lg shadow-lg hover:bg-indigo-700 transition-colors"
+          onClick={() => setSidebarOpen(true)}
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+        
+        <div className={cn(isDashboardHome ? "overflow-hidden" : "overflow-auto") }>
+          <div className={cn("p-4 lg:p-8 rounded-tl-2xl min-h-screen", isDashboardHome ? "overflow-hidden" : "overflow-auto") }>
             {children}
           </div>
         </div>

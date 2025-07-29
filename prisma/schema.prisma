@@ -171,6 +171,7 @@ model Project {
   enrollment_cap           Int?
   enrollment_start_date    DateTime?
   enrollment_end_date      DateTime?
+  ai_prompt_custom         String?             // Custom AI prompt for this project (optional)
   component_requests       ComponentRequest[]
   project_requests         ProjectRequest[]
   submissions              ProjectSubmission[]

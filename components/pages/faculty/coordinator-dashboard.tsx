@@ -44,6 +44,7 @@ import { LibraryManagement } from "@/components/pages/faculty/library-management
 import { LibraryInventoryStatus } from "@/components/pages/faculty/library-inventory-status"
 import { LabInventoryStatus } from "@/components/pages/faculty/lab-inventory-status"
 import { LabComponentsManagement } from "./lab-components-management"
+import { FacultyProjectRequests } from "./faculty-project-requests"
 import { 
   DropdownMenu,
   DropdownMenuContent,
@@ -1071,7 +1072,9 @@ export function CoordinatorDashboard() {
                 <CardTitle>{roleName} Collection Management</CardTitle>
               </CardHeader>
               <CardContent>
-                {collectionRequests.length === 0 ? (
+                {selectedRole === 'projects' ? (
+                  <FacultyProjectRequests onBack={() => setActiveTab('analytics')} />
+                ) : collectionRequests.length === 0 ? (
                   <Card>
                     <CardContent className="p-8 text-center">
                       <CheckCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />

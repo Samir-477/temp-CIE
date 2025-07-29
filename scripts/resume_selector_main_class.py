@@ -41,7 +41,7 @@ class ResumeSelector:
 
         # Initialize embedding model
         if not self.quiet:
-            print("Loading embedding model...")
+            print("Loading embedding model...", file=sys.stderr)
         self.embedding_model = SentenceTransformer(embedding_model)
         self.embedding_dim = self.embedding_model.get_sentence_embedding_dimension()
 
@@ -52,7 +52,8 @@ class ResumeSelector:
         self.resume_metadata: Dict[str, Any] = {}
 
         if not self.quiet:
-            print("✅ Resume Selector initialized!")
+            print("✅ Resume Selector initialized!", file=sys.stderr)
+            sys.stderr.flush()
 
     def extract_text_from_pdf(self, pdf_path: str) -> str:
         """

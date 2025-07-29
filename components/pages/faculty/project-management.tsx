@@ -47,6 +47,7 @@ import {
   Clipboard,
   Edit,
   Trash,
+  Download,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/components/auth-provider";
@@ -148,6 +149,45 @@ interface Course {
   course_code: string;
 }
 
+// Component for truncating project description to 7 lines with info button
+function ProjectDescription({ description }: { description: string }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  const truncateToLines = (text: string, maxLines: number = 7) => {
+    const words = text.split(' ');
+    const wordsPerLine = 12; // Approximate words per line
+    const maxWords = maxLines * wordsPerLine;
+    
+    if (words.length <= maxWords) {
+      return text;
+    }
+    
+    return words.slice(0, maxWords).join(' ') + '...';
+  };
+
+  const truncatedDescription = truncateToLines(description);
+  const needsTruncation = truncatedDescription !== description;
+
+  return (
+    <div className="relative">
+      <p className="text-sm text-gray-600">
+        {isExpanded ? description : truncatedDescription}
+      </p>
+      {needsTruncation && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="absolute -top-1 -right-1 h-6 w-6 p-0 hover:bg-blue-50"
+          onClick={() => setIsExpanded(!isExpanded)}
+          title={isExpanded ? "Show less" : "Show full description"}
+        >
+          <Info className="h-3 w-3 text-blue-500" />
+        </Button>
+      )}
+    </div>
+  );
+}
+
 interface LabComponent {
   id: string;
   component_name: string;
@@ -181,6 +221,12 @@ export function ProjectManagement() {
   const [isShortlisting, setIsShortlisting] = useState(false);
   const [showAIRanking, setShowAIRanking] = useState(false);
   const [isAIResultsChoiceDialogOpen, setIsAIResultsChoiceDialogOpen] = useState(false); // New state for AI results choice
+  
+  // Custom AI Prompt states
+  const [isCustomPromptDialogOpen, setIsCustomPromptDialogOpen] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState("");
+  const [isLoadingPrompt, setIsLoadingPrompt] = useState(false);
+  const [isSavingPrompt, setIsSavingPrompt] = useState(false);
   const [selectedCandidateDetails, setSelectedCandidateDetails] =
     useState<any>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
@@ -204,6 +250,13 @@ export function ProjectManagement() {
     fetchData();
     checkCoordinatorStatus();
   }, []);
+
+  // Load custom prompt when custom prompt dialog opens with a selected project
+  useEffect(() => {
+    if (selectedProject && isCustomPromptDialogOpen) {
+      loadCustomPrompt(selectedProject.id);
+    }
+  }, [selectedProject?.id, isCustomPromptDialogOpen]);
 
   const checkCoordinatorStatus = async () => {
     try {
@@ -740,7 +793,7 @@ export function ProjectManagement() {
     // Show initial toast with loading indicator
     toast({
       title: "AI Analysis Started",
-      description: "Analyzing resumes with AI... This may take 1-2 minutes",
+      description: `Analyzing ${project.project_requests.length} resumes with AI... This typically takes 1-2 minutes for thorough analysis.`,
     });
 
     try {
@@ -752,7 +805,8 @@ export function ProjectManagement() {
         },
         body: JSON.stringify({
           project_id: project.id,
-          top_k: Math.min(5, project.project_requests.length),
+          top_k: project.project_requests.length, // Show ALL applications ranked from best to worst
+          custom_prompt: customPrompt || undefined,
         }),
       });
 
@@ -926,6 +980,164 @@ export function ProjectManagement() {
     }
   };
 
+  // Function to load custom AI prompt for a project
+  const loadCustomPrompt = async (projectId: string) => {
+    setIsLoadingPrompt(true);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/ai-prompt`, {
+        headers: {
+          "x-user-id": user?.id || "",
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setCustomPrompt(data.ai_prompt_custom || "");
+      } else {
+        console.error("Failed to load custom prompt");
+        setCustomPrompt("");
+      }
+    } catch (error) {
+      console.error("Error loading custom prompt:", error);
+      setCustomPrompt("");
+    } finally {
+      setIsLoadingPrompt(false);
+    }
+  };
+
+  // Function to save custom AI prompt for a project
+  const saveCustomPrompt = async (projectId: string, prompt: string) => {
+    setIsSavingPrompt(true);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/ai-prompt`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": user?.id || "",
+        },
+        body: JSON.stringify({
+          ai_prompt_custom: prompt,
+        }),
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: "Custom AI prompt saved successfully",
+        });
+        setIsCustomPromptDialogOpen(false); // Close dialog after saving
+      } else {
+        throw new Error("Failed to save custom prompt");
+      }
+    } catch (error) {
+      console.error("Error saving custom prompt:", error);
+      toast({
+        title: "Error",
+        description: "Failed to save custom prompt. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingPrompt(false);
+    }
+  };
+
+  // Function to export shortlist results as CSV
+  const exportShortlistCSV = async () => {
+    if (!selectedProject || !shortlistResults) {
+      toast({
+        title: "No Data Available",
+        description: "Please run AI shortlist analysis first before exporting.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // Convert existing shortlist results to CSV format
+      const csvHeaders = [
+        "Rank",
+        "Student Name",
+        "Student Email", 
+        "Match Score",
+        "Top Skills",
+        "AI Analysis Reasons",
+        "Request ID"
+      ];
+
+      const csvRows = shortlistResults.shortlisted_candidates?.map((candidate: any, index: number) => {
+        const skills = (candidate.ai_analysis?.skills || []).join('; ');
+        const reasons = (candidate.ai_analysis?.reasons || []).join('; ');
+        const score = (candidate.score * 100).toFixed(1) + '%';
+        
+        return [
+          (index + 1).toString(),
+          `"${candidate.student_name || ''}"`,
+          `"${candidate.student_email || ''}"`,
+          score,
+          `"${skills}"`,
+          `"${reasons}"`,
+          `"${candidate.request_id || ''}"`
+        ].join(',');
+      }) || [];
+
+      const csvContent = [csvHeaders.join(','), ...csvRows].join('\n');
+      
+      // Create and download the CSV file
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${selectedProject.name.replace(/[^a-zA-Z0-9]/g, "_")}_shortlist_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+
+      toast({
+        title: "Success",
+        description: "Shortlist exported as CSV successfully!",
+      });
+    } catch (error) {
+      console.error("Error exporting CSV:", error);
+      toast({
+        title: "Error",
+        description: "Failed to export CSV. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Function to generate the default AI prompt for a project
+  const generateDefaultPrompt = (project: Project | null) => {
+    if (!project) return "";
+    
+    return `Project: ${project.name}
+
+Description: ${project.description}
+
+Requirements: Looking for candidates with relevant skills and experience for this project.
+
+Expected completion: ${new Date(project.expected_completion_date).toLocaleDateString()}
+
+---
+
+ANALYSIS INSTRUCTIONS:
+Please analyze candidates based on:
+1. Technical skills matching project requirements
+2. Relevant work experience and background
+3. Educational qualifications
+4. Problem-solving abilities and project experience
+5. Communication skills and team collaboration potential
+
+Rank candidates by overall suitability score (0.0 to 1.0) and provide detailed reasoning for each selection.`.trim();
+  };
+
+  // Function to apply the default prompt
+  const applyDefaultPrompt = () => {
+    const defaultPrompt = generateDefaultPrompt(selectedProject);
+    setCustomPrompt(defaultPrompt);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -945,12 +1157,6 @@ export function ProjectManagement() {
       <div className="flex items-center justify-between mb-4">
         <h2 className="faculty-page-title">Project Management</h2>
         <div className="flex gap-4">
-          <Button
-            variant="outline"
-            onClick={() => setShowFacultyRequests(true)}
-          >
-            Manage Faculty Project Requests
-          </Button>
           <button
             className="btn-edit"
             onClick={() => fetchData()}
@@ -1060,7 +1266,7 @@ export function ProjectManagement() {
                   <Label htmlFor="dueDate">Expected Completion Date</Label>
                   <Input
                     id="dueDate"
-                    type="date"
+                    type="datetime-local"
                     value={newProject.expected_completion_date}
                     onChange={(e) =>
                       setNewProject({
@@ -1129,7 +1335,7 @@ export function ProjectManagement() {
                           <span>Waiting for coordinator approval</span>
                         </div>
                       )}
-                      {project.status === "ONGOING" &&
+                      {project.status === "APPROVED" &&
                         project.enrollment_status === "NOT_STARTED" && (
                           <div className="mt-2 flex items-center text-sm text-green-600">
                             <Calendar className="h-4 w-4 mr-1" />
@@ -1144,9 +1350,9 @@ export function ProjectManagement() {
                           <h3 className="text-sm font-semibold text-gray-700">
                             Description
                           </h3>
-                          <p className="text-sm text-gray-600 mt-1">
-                            {project.description}
-                          </p>
+                          <div className="text-sm text-gray-600 mt-1">
+                            <ProjectDescription description={project.description} />
+                          </div>
                         </div>
 
                         {project.components_needed &&
@@ -1249,7 +1455,7 @@ export function ProjectManagement() {
 
                     {/* Enrollment Management Buttons */}
                     <div className="space-y-2">
-                      {project.status === "ONGOING" &&
+                      {project.status === "APPROVED" &&
                         project.enrollment_status === "NOT_STARTED" && (
                           <Button
                             className="w-full"
@@ -1315,7 +1521,7 @@ export function ProjectManagement() {
                             </svg>
                             Edit
                           </button>
-                          <button className="btn-delete" onClick={() => { setProjectToDelete(project); setIsDeleteDialogOpen(true); }}>
+                          <button className="btn-delete" onClick={() => handleDeleteProject(project.id)}>
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="h-4 w-4 mr-1">
                               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                             </svg>
@@ -1765,32 +1971,52 @@ export function ProjectManagement() {
               <span>Project Applications - {selectedProject?.name}</span>
               <div className="flex gap-2">
                 {!showAIRanking && selectedProjectApplications.length > 0 && (
-                  <Button
-                    onClick={handleAIShortlistInDialog}
-                    disabled={isShortlisting}
-                    className="bg-purple-600 hover:bg-purple-700 text-white"
-                  >
-                    {isShortlisting ? (
-                      <>
-                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                        AI Analyzing...
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle className="h-4 w-4 mr-2" />
-                        AI Shortlist Candidates
-                      </>
-                    )}
-                  </Button>
+                  <>
+                    <Button
+                      variant="outline"
+                      onClick={() => setIsCustomPromptDialogOpen(true)}
+                      className="border-purple-300 text-purple-700 hover:bg-purple-50"
+                    >
+                      <Settings className="h-4 w-4 mr-2" />
+                      Customize AI Prompt
+                    </Button>
+                    <Button
+                      onClick={handleAIShortlistInDialog}
+                      disabled={isShortlisting}
+                      className="bg-purple-600 hover:bg-purple-700 text-white"
+                    >
+                      {isShortlisting ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                          AI Analyzing...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="h-4 w-4 mr-2" />
+                          AI Shortlist Candidates
+                        </>
+                      )}
+                    </Button>
+                  </>
                 )}
                 {showAIRanking && (
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowAIRanking(false)}
-                  >
-                    <Users className="h-4 w-4 mr-2" />
-                    Show All Applications
-                  </Button>
+                  <>
+                    <Button
+                      onClick={exportShortlistCSV}
+                      variant="outline"
+                      className="border-green-300 text-green-700 hover:bg-green-50"
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Export CSV
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowAIRanking(false)}
+                    >
+                      <Users className="h-4 w-4 mr-2" />
+                      Show All Applications
+                    </Button>
+                  </>
                 )}
               </div>
             </DialogTitle>
@@ -1949,7 +2175,7 @@ export function ProjectManagement() {
                                     className="text-blue-600 hover:text-blue-800 underline text-sm flex items-center"
                                   >
                                     <FileText className="h-4 w-4 mr-1" />
-                                    View PDF
+                                    Resume
                                   </a>
                                 )}
                               </td>
@@ -2754,6 +2980,106 @@ export function ProjectManagement() {
               Cancel
             </Button>
             <Button onClick={handleSaveEditedProject}>Save Changes</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Custom AI Prompt Dialog */}
+      <Dialog
+        open={isCustomPromptDialogOpen}
+        onOpenChange={setIsCustomPromptDialogOpen}
+      >
+        <DialogContent className="sm:max-w-[70vw] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings className="h-5 w-5 text-purple-600" />
+              Customize AI Analysis Prompt
+            </DialogTitle>
+            <DialogDescription>
+              Customize the AI prompt used for analyzing candidates for: <strong>{selectedProject?.name}</strong>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4" >
+
+            {isLoadingPrompt ? (
+              <div className="flex items-center justify-center space-x-2 py-8">
+                <RefreshCw className="h-6 w-6 animate-spin text-purple-600" />
+                <span className="text-lg">Loading current prompt...</span>
+              </div>
+            ) : (
+              <div className="space-y-4 ">
+                <div className="space-y-2 ">
+                  <Label htmlFor="custom-prompt" className="text-sm font-semibold text-gray-700">
+                    AI Analysis Prompt
+                  </Label>
+                  <textarea
+                    id="custom-prompt"
+                    value={customPrompt === "" ? generateDefaultPrompt(selectedProject) : customPrompt}
+                    onChange={(e) => setCustomPrompt(e.target.value)}
+                    placeholder="Enter your custom AI prompt here..."
+                    className="w-full h-72 p-4 border border-purple-200 rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent font-mono text-sm"
+                  />
+                </div>
+
+                <div className="text-xs text-purple-700 bg-purple-100 p-3 rounded">
+                  <strong>💡 Tips for effective prompts:</strong>
+                  <ul className="mt-1 ml-4 list-disc">
+                    <li>Specify required technical skills or programming languages</li>
+                    <li>Mention desired experience level or domain knowledge</li>
+                    <li>Include soft skills like teamwork or communication if important</li>
+                    <li>Keep the JSON format requirement for proper AI processing</li>
+                  </ul>
+                </div>
+
+                <div className="flex justify-between pt-4">
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={applyDefaultPrompt}
+                      variant="outline"
+                      size="sm"
+                      className="border-purple-300 text-purple-700 hover:bg-purple-50"
+                    >
+                      Reset to Default
+                    </Button>
+                    <Button
+                      onClick={() => setCustomPrompt("")}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                  
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setIsCustomPromptDialogOpen(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        if (selectedProject) {
+                          saveCustomPrompt(selectedProject.id, customPrompt);
+                        }
+                      }}
+                      disabled={isSavingPrompt}
+                      className="bg-purple-600 hover:bg-purple-700 text-white"
+                    >
+                      {isSavingPrompt ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        "Save & Close"
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>

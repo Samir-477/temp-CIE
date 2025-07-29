@@ -14,7 +14,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { FolderOpen, Calendar, Users, RefreshCw, CheckCircle, XCircle, ArrowLeft } from "lucide-react"
+import { FolderOpen, Calendar, Users, RefreshCw, CheckCircle, XCircle, ArrowLeft, Info } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/components/auth-provider"
 
@@ -52,6 +52,7 @@ export function FacultyProjectRequests({ onBack }: FacultyProjectRequestsProps) 
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [facultyNotes, setFacultyNotes] = useState("")
+  const [expandedDescriptions, setExpandedDescriptions] = useState<Set<string>>(new Set())
   const { toast } = useToast()
 
   useEffect(() => {
@@ -123,6 +124,16 @@ export function FacultyProjectRequests({ onBack }: FacultyProjectRequestsProps) 
     }
   }
 
+  const toggleDescriptionExpansion = (projectId: string) => {
+    const newExpanded = new Set(expandedDescriptions)
+    if (newExpanded.has(projectId)) {
+      newExpanded.delete(projectId)
+    } else {
+      newExpanded.add(projectId)
+    }
+    setExpandedDescriptions(newExpanded)
+  }
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "PENDING":
@@ -187,7 +198,36 @@ export function FacultyProjectRequests({ onBack }: FacultyProjectRequestsProps) 
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <p className="text-sm text-gray-700 line-clamp-3">{project.description}</p>
+                  <div className="flex items-start gap-2">
+                    <p 
+                      className={`text-sm text-gray-700 flex-1 ${
+                        expandedDescriptions.has(project.id) 
+                          ? '' 
+                          : 'overflow-hidden'
+                      }`}
+                      style={
+                        expandedDescriptions.has(project.id) 
+                          ? {} 
+                          : {
+                              display: '-webkit-box',
+                              WebkitLineClamp: 6,
+                              WebkitBoxOrient: 'vertical' as const,
+                              overflow: 'hidden'
+                            }
+                      }
+                    >
+                      {project.description}
+                    </p>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-gray-400 hover:text-gray-600 flex-shrink-0"
+                      onClick={() => toggleDescriptionExpansion(project.id)}
+                      title={expandedDescriptions.has(project.id) ? "Show less" : "Show more"}
+                    >
+                      <Info className="h-3 w-3" />
+                    </Button>
+                  </div>
                 </div>
                 
                 <div className="flex items-center text-sm text-gray-500">

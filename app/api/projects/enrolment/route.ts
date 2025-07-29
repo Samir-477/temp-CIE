@@ -52,11 +52,12 @@ export async function PUT(request: NextRequest) {
       }, { status: 403 })
     }
 
-    if (project.status !== "ONGOING") {
-      return NextResponse.json({ 
-        error: "Project must be ongoing before managing enrollment" 
-      }, { status: 400 })
-    }
+    if (project.status !== "APPROVED" && project.status !== "ONGOING") {
+  return NextResponse.json(
+    { error: "Can only start enrollment for approved projects" },
+    { status: 400 }
+  );
+}
 
     let updateData: any = {
       modified_by: userId,
