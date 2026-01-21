@@ -1,4 +1,4 @@
-# CIE - College Information Exchange
+# Centre of Innovation and Entrepreneurship (CIE) 
 
 A comprehensive laboratory management system built with Next.js, Prisma, and PostgreSQL.
 
